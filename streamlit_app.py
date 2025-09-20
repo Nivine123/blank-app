@@ -214,11 +214,7 @@ with st.expander("Quick insights (calculated on filtered data)"):
 st.markdown("---")
 st.caption("---")
 
-import streamlit as st
-import pandas as pd
-import plotly.express as px
 
-st.set_page_config(page_title="Tourism Insights", layout="wide")
 
 st.title("Tourism Insights: Initiatives vs Tourism Development")
 
