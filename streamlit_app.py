@@ -695,4 +695,6 @@ if st.button("📥 Export Filtered Data"):
     st.download_button(
         label="Download Filtered Data as CSV",
         data=csv,
-        file_name=f"filtered_tourism_data{filter_suffix}_{pd.Timestamp.now().strftime
+        file_name=f"filtered_tourism_data{filter_suffix}_{pd.Timestamp.now().strftime('%Y%m%d_%H%M%S')}.csv",
+        mime="text/csv"
+    )
