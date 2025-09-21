@@ -1,4 +1,12 @@
-# Ensure this block starts with a proper condition
+\# Geographic Analysis Mode
+st.sidebar.markdown("### 🔍 Geographic Analysis Mode")
+geo_analysis_mode = st.sidebar.selectbox(
+    "Analysis Focus:",
+    ["Standard Analysis", "Compare Regions", "Regional Ranking", "Geographic Distribution"],
+    help="Choose how to analyze the geographic data"
+)
+
+# Make sure the geo_analysis_mode is defined before proceeding with the if/elif checks
 if geo_analysis_mode == "Compare Regions" and len(governorate_choice) > 1:
     st.markdown("""
     <div class="geographic-box">
@@ -29,7 +37,6 @@ if geo_analysis_mode == "Compare Regions" and len(governorate_choice) > 1:
     st.markdown("#### 📊 Detailed Regional Statistics")
     st.dataframe(regional_stats, use_container_width=True)
 
-# Check if the geo_analysis_mode is "Regional Ranking"
 elif geo_analysis_mode == "Regional Ranking":
     st.markdown("""
     <div class="geographic-box">
