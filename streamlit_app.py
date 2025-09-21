@@ -174,3 +174,5 @@ fig_region.update_layout(
 
 # Show the region-based initiatives chart
 st.plotly_chart(fig_region)
+
+# Additional insights can be added below as required
