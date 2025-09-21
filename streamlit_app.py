@@ -132,30 +132,13 @@ with st.expander("📋 Column Names"):
     cols_df = pd.DataFrame({"Column Names": df.columns.tolist()})
     st.dataframe(cols_df, use_container_width=True)
 
-# Column detection
-col_initiative = find_col(df, [
-    "Existence of initiatives", "Existence of initiativ", "existence of initiativ", 
-    "initiatives and projects", "initiatives"
-])
-
-col_tourism_index = find_col(df, ["Tourism Index", "Tourism_Index", "tourism index"])
-col_total_hotels = find_col(df, ["Total number of hotels", "Total number of hotel", "total hotels", "total number"])
+# Column detection with better error handling
 col_governorate = find_col(df, ["Governorate", "governorate", "Region", "region", "Mohafazat", "mohafazat"])
-
-# Look for additional geographic columns
 col_area = find_col(df, ["Area", "City", "Municipality", "District", "Caza", "area", "city"])
-col_zone = find_col(df, ["Zone", "zone", "Sector", "sector"])
 
-# Numeric columns for analysis
-numeric_cols = df.select_dtypes(include=["number"]).columns.tolist()
-preferred_metrics = []
-if col_tourism_index and col_tourism_index in numeric_cols:
-    preferred_metrics.append(col_tourism_index)
-if col_total_hotels and col_total_hotels in numeric_cols:
-    preferred_metrics.append(col_total_hotels)
-for c in numeric_cols:
-    if c not in preferred_metrics:
-        preferred_metrics.append(c)
+if col_governorate is None or col_area is None:
+    st.error("❌ Could not find required columns (Governorate or Area) in the dataset.")
+    st.stop()
 
 # Sidebar filters
 st.sidebar.markdown("## 🎛️ Filtering Options")
@@ -167,8 +150,8 @@ df_filtered = df[(df[col_governorate] == selected_governorate) & (df[col_area] =
 # Visualization 1: Boxplot of Tourism Index Distribution
 st.markdown('<div class="sub-header">📈 Visualization 1: Tourism Index Distribution</div>', unsafe_allow_html=True)
 
-if col_tourism_index:
-    fig = px.box(df_filtered, y=col_tourism_index, title="Distribution of Tourism Index by Region")
+if 'Tourism Index' in df.columns:
+    fig = px.box(df_filtered, y='Tourism Index', title="Distribution of Tourism Index by Region")
     st.plotly_chart(fig, use_container_width=True)
 else:
     st.error("❌ No valid Tourism Index column found.")
@@ -176,9 +159,9 @@ else:
 # Visualization 2: Number of Initiatives by Region
 st.markdown('<div class="sub-header">📊 Visualization 2: Number of Initiatives by Region</div>', unsafe_allow_html=True)
 
-if 'refArea' in df.columns and col_initiative:
+if 'refArea' in df.columns and 'Existence of initiatives' in df.columns:
     # Filter data based on initiative existence
-    initiatives_exist_df = df_filtered[df_filtered[col_initiative] == 1]
+    initiatives_exist_df = df_filtered[df_filtered['Existence of initiatives'] == 1]
     
     # Count number of initiatives per region
     initiative_counts_by_region = initiatives_exist_df['refArea'].value_counts().reset_index()
