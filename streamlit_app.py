@@ -42,13 +42,6 @@ st.markdown("""
     margin: 1rem 0;
     border-radius: 5px;
 }
-.geographic-box {
-    background-color: #f3e5f5;
-    border-left: 5px solid #9c27b0;
-    padding: 1rem;
-    margin: 1rem 0;
-    border-radius: 5px;
-}
 </style>
 """, unsafe_allow_html=True)
 
@@ -60,7 +53,6 @@ st.markdown("""
 <strong>📊 Dashboard Overview</strong><br>
 This interactive dashboard analyzes tourism data across different regions and initiative types. 
 The visualizations help identify patterns in tourism development and infrastructure distribution.
-Use the enhanced sidebar controls to filter data and explore different geographic perspectives.
 </div>
 """, unsafe_allow_html=True)
 
@@ -250,11 +242,19 @@ if col_area:
             area_coverage = (len(area_choice) / len(available_areas)) * 100 if available_areas else 0
             st.sidebar.info(f"🏘️ Areas: {len(area_choice)}/{len(available_areas)} ({area_coverage:.1f}%)")
 
-# **Regional Analysis Visualization**
-st.markdown('<div class="sub-header">📊 Regional Analysis by Initiative Status</div>', unsafe_allow_html=True)
+# Apply filters
+df_filtered = df.copy()
 
-# Filter for initiatives
-df_initiatives = df[df[col_initiative] == 1]
+# Apply governorate filter
+if governorate_choice is not None and len(governorate_choice) > 0:
+    df_filtered = df_filtered[df_filtered[col_governorate].isin(governorate_choice)]
+
+# Apply area filter
+if area_choice is not None and len(area_choice) > 0 and col_area:
+    df_filtered = df_filtered[df_filtered[col_area].isin(area_choice)]
+
+# Apply initiative filter
+df_initiatives = df_filtered[df_filtered[col_initiative] == 1]  # Filter based on initiatives
 
 # Count initiatives by region
 initiative_counts_by_region = df_initiatives[col_governorate].value_counts().reset_index()
