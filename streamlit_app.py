@@ -688,7 +688,7 @@ if 'refArea' in df.columns and col_initiative:
                 correlation_insight = "Low correlation - initiative activity and tourism performance appear independent"
                 correlation_color = "context-box"
             
-             st.markdown(f"""
+                       st.markdown(f"""
             <div class="{correlation_color}">
             <strong>📈 Initiative-Performance Relationship:</strong><br>
             Correlation coefficient: {correlation:.3f}<br>
