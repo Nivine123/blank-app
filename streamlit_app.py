@@ -2,7 +2,10 @@ import streamlit as st
 import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
+from plotly.subplots import make_subplots
 import numpy as np
+from sklearn.preprocessing import StandardScaler
+from sklearn.cluster import KMeans
 
 # Page configuration
 st.set_page_config(
@@ -55,6 +58,13 @@ st.markdown("""
     margin: 1rem 0;
     border-radius: 5px;
 }
+.performance-box {
+    background-color: #e8f5e8;
+    border-left: 5px solid #4caf50;
+    padding: 1rem;
+    margin: 1rem 0;
+    border-radius: 5px;
+}
 </style>
 """, unsafe_allow_html=True)
 
@@ -65,7 +75,7 @@ st.markdown("""
 <div class="context-box">
 <strong>📊 Dashboard Overview</strong><br>
 This interactive dashboard analyzes tourism data across different regions and initiative types. 
-The visualizations help identify patterns in tourism development and infrastructure distribution.
+The visualizations help identify patterns in tourism development, infrastructure distribution, and regional performance.
 Use the enhanced sidebar controls to filter data and explore different geographic perspectives.
 </div>
 """, unsafe_allow_html=True)
@@ -92,6 +102,68 @@ def find_col(df, candidates):
             if cand_l in original.lower():
                 return original
     return None
+
+@st.cache_data
+def create_regional_performance_matrix(df_filtered, selected_metrics, col_governorate):
+    """Create comprehensive regional performance matrix"""
+    if df_filtered.empty or not selected_metrics:
+        return pd.DataFrame()
+    
+    regional_matrix = {}
+    for metric in selected_metrics:
+        if metric in df_filtered.columns:
+            regional_stats = df_filtered.groupby(col_governorate)[metric].agg(['mean', 'median', 'count']).round(2)
+            for stat in ['mean', 'median', 'count']:
+                regional_matrix[f"{metric}_{stat}"] = regional_stats[stat]
+    
+    if regional_matrix:
+        matrix_df = pd.DataFrame(regional_matrix)
+        # Calculate composite score (average of normalized means)
+        mean_cols = [col for col in matrix_df.columns if col.endswith('_mean')]
+        if mean_cols:
+            normalized_means = matrix_df[mean_cols].apply(lambda x: (x - x.min()) / (x.max() - x.min()) if x.max() != x.min() else x)
+            matrix_df['composite_score'] = normalized_means.mean(axis=1).round(2)
+        return matrix_df
+    return pd.DataFrame()
+
+@st.cache_data  
+def calculate_regional_clusters(performance_data):
+    """Apply clustering algorithm to identify regional performance groups"""
+    if len(performance_data) < 3:
+        return np.zeros(len(performance_data))
+    
+    # Select numeric columns only
+    numeric_cols = performance_data.select_dtypes(include=[np.number]).columns
+    if len(numeric_cols) == 0:
+        return np.zeros(len(performance_data))
+    
+    try:
+        # Standardize metrics
+        scaler = StandardScaler()
+        standardized_data = scaler.fit_transform(performance_data[numeric_cols].fillna(0))
+        
+        # Apply clustering
+        n_clusters = min(3, len(performance_data))
+        clusters = KMeans(n_clusters=n_clusters, random_state=42).fit_predict(standardized_data)
+        return clusters
+    except:
+        return np.zeros(len(performance_data))
+
+def generate_regional_insights(df_regional, metric):
+    """Generate contextual insights for regional performance"""
+    if df_regional.empty:
+        return {}
+    
+    insights = {}
+    if 'composite_score' in df_regional.columns:
+        insights['top_performer'] = df_regional['composite_score'].idxmax()
+        insights['top_score'] = df_regional['composite_score'].max()
+        insights['bottom_performer'] = df_regional['composite_score'].idxmin()
+        insights['bottom_score'] = df_regional['composite_score'].min()
+        insights['performance_range'] = insights['top_score'] - insights['bottom_score']
+        insights['average_performance'] = df_regional['composite_score'].mean()
+    
+    return insights
 
 # Sidebar for data loading and controls
 st.sidebar.markdown("## 📁 Data Source")
@@ -140,7 +212,7 @@ col_initiative = find_col(df, [
 
 col_tourism_index = find_col(df, ["Tourism Index", "Tourism_Index", "tourism index"])
 col_total_hotels = find_col(df, ["Total number of hotels", "Total number of hotel", "total hotels", "total number"])
-col_governorate = find_col(df, ["Governorate", "governorate", "Region", "region", "Mohafazat", "mohafazat"])
+col_governorate = find_col(df, ["Governorate", "governorate", "Region", "region", "Mohafazat", "mohafazat", "refArea"])
 
 # Look for additional geographic columns
 col_area = find_col(df, ["Area", "City", "Municipality", "District", "Caza", "area", "city"])
@@ -212,6 +284,39 @@ if col_governorate:
         coverage_pct = (len(governorate_choice) / len(uniq_gov)) * 100
         st.sidebar.info(f"📊 Selected: {len(governorate_choice)}/{len(uniq_gov)} regions ({coverage_pct:.1f}%)")
 
+# NEW: Regional Analysis Controls
+st.sidebar.markdown("## 🗺️ Regional Analysis Controls")
+
+# Performance benchmarking selector
+benchmark_type = st.sidebar.selectbox(
+    "🎯 Benchmark Analysis:",
+    ["Against National Average", "Top Performers Only", "Regional Clusters", "Performance Quartiles"]
+)
+
+# Multi-metric selector for regional analysis
+if preferred_metrics:
+    regional_metrics = st.sidebar.multiselect(
+        "📊 Select Metrics for Regional Analysis:",
+        preferred_metrics,
+        default=preferred_metrics[:3] if len(preferred_metrics) >= 3 else preferred_metrics,
+        help="Choose 2-4 metrics for comprehensive regional comparison"
+    )
+
+# Performance threshold slider
+performance_threshold = st.sidebar.slider(
+    "🎚️ Performance Threshold (%)",
+    min_value=0.0,
+    max_value=100.0,
+    value=50.0,
+    help="Set minimum performance level for regional analysis"
+)
+
+# Regional grouping options
+grouping_mode = st.sidebar.selectbox(
+    "🏘️ Regional Grouping:",
+    ["Individual Regions", "Performance Tiers", "Statistical Clusters"]
+)
+
 # Secondary area filter (if available)
 area_choice = None
 if col_area:
@@ -256,14 +361,6 @@ if col_area:
             area_coverage = (len(area_choice) / len(available_areas)) * 100 if available_areas else 0
             st.sidebar.info(f"🏘️ Areas: {len(area_choice)}/{len(available_areas)} ({area_coverage:.1f}%)")
 
-# Geographic Analysis Mode
-st.sidebar.markdown("### 🔍 Geographic Analysis Mode")
-geo_analysis_mode = st.sidebar.selectbox(
-    "Analysis Focus:",
-    ["Standard Analysis", "Compare Regions", "Regional Ranking", "Geographic Distribution"],
-    help="Choose how to analyze the geographic data"
-)
-
 # Sidebar controls for other filters
 st.sidebar.markdown("## 🎛️ Other Interactive Controls")
 
@@ -283,13 +380,13 @@ else:
         selected_cat = st.sidebar.selectbox("📊 Choose categorical column", options=[None] + categorical_cols)
         if selected_cat:
             col_initiative = selected_cat
-            uniq_init = sorted(df[col_initiative].dropna().unique().tolist())
+            uniq_init = sorted(df[selected_cat].dropna().unique().tolist())
             selected_initiatives = st.sidebar.multiselect(f"Filter by {selected_cat}", options=uniq_init, default=uniq_init)
 
 # Metric and aggregation selection
 if preferred_metrics:
-    metric = st.sidebar.selectbox("📈 Select Metric to Analyze", preferred_metrics, 
-                                help="Choose the numeric variable for analysis")
+    metric = st.sidebar.selectbox("📈 Select Primary Metric", preferred_metrics, 
+                                help="Choose the main numeric variable for analysis")
     agg_func = st.sidebar.selectbox("🔢 Aggregation Method", 
                                   ["mean", "median", "sum", "count"], 
                                   index=0,
@@ -348,99 +445,7 @@ with col5:
         init_count = len(selected_initiatives)
         st.metric("🏗️ Initiatives", init_count)
 
-# ENHANCED GEOGRAPHIC ANALYSIS SECTION
-if col_governorate and governorate_choice and geo_analysis_mode != "Standard Analysis":
-    st.markdown('<div class="sub-header">🗺️ Geographic Analysis Results</div>', unsafe_allow_html=True)
-    
-    if geo_analysis_mode == "Compare Regions" and len(governorate_choice) > 1:
-        st.markdown("""
-        <div class="geographic-box">
-        <strong>🔍 Regional Comparison Mode:</strong> Comparing performance across selected regions
-        </div>
-        """, unsafe_allow_html=True)
-        
-        # Regional comparison analysis
-        regional_stats = df_filtered.groupby(col_governorate)[metric].agg(['mean', 'count', 'std']).round(2)
-        regional_stats.columns = ['Average', 'Count', 'Std Dev']
-        
-        # Create horizontal bar chart for better region name visibility
-        fig_regional = px.bar(
-            regional_stats.reset_index(), 
-            x='Average', 
-            y=col_governorate,
-            orientation='h',
-            title=f"Regional Comparison: Average {metric}",
-            color='Average',
-            color_continuous_scale="viridis",
-            text='Average'
-        )
-        fig_regional.update_traces(texttemplate='%{text:.1f}', textposition='outside')
-        fig_regional.update_layout(height=max(400, len(governorate_choice) * 60))
-        st.plotly_chart(fig_regional, use_container_width=True)
-        
-        # Show detailed comparison table
-        st.markdown("#### 📊 Detailed Regional Statistics")
-        st.dataframe(regional_stats, use_container_width=True)
-    
-    elif geo_analysis_mode == "Regional Ranking":
-        st.markdown("""
-        <div class="geographic-box">
-        <strong>🏆 Regional Ranking Mode:</strong> Performance ranking of selected regions
-        </div>
-        """, unsafe_allow_html=True)
-        
-        if len(governorate_choice) > 1:
-            ranking_df = df_filtered.groupby(col_governorate).agg({
-                metric: ['mean', 'sum', 'count']
-            }).round(2)
-            
-            ranking_df.columns = ['Average', 'Total', 'Count']
-            ranking_df = ranking_df.sort_values('Average', ascending=False).reset_index()
-            ranking_df['Rank'] = range(1, len(ranking_df) + 1)
-            
-            # Add performance indicators
-            ranking_df['Performance'] = pd.cut(ranking_df['Average'], 
-                                             bins=3, 
-                                             labels=['🔴 Below Average', '🟡 Average', '🟢 Above Average'])
-            
-            # Reorder columns
-            ranking_df = ranking_df[['Rank', col_governorate, 'Average', 'Total', 'Count', 'Performance']]
-            
-            st.dataframe(ranking_df, use_container_width=True, hide_index=True)
-        else:
-            st.info("🔍 Select multiple regions to see ranking comparison")
-    
-    elif geo_analysis_mode == "Geographic Distribution":
-        st.markdown("""
-        <div class="geographic-box">
-        <strong>📍 Geographic Distribution Mode:</strong> Visualizing data distribution across geography
-        </div>
-        """, unsafe_allow_html=True)
-        
-        if col_area and area_choice:
-            # Two-level geographic analysis
-            geo_df = df_filtered.groupby([col_governorate, col_area])[metric].mean().reset_index()
-            
-            if not geo_df.empty:
-                fig_geo = px.sunburst(
-                    geo_df,
-                    path=[col_governorate, col_area],
-                    values=metric,
-                    title=f"Hierarchical Geographic Distribution of {metric}"
-                )
-                st.plotly_chart(fig_geo, use_container_width=True)
-        else:
-            # Single-level geographic pie chart
-            geo_totals = df_filtered.groupby(col_governorate)[metric].sum()
-            
-            fig_pie = px.pie(
-                values=geo_totals.values,
-                names=geo_totals.index,
-                title=f"Geographic Distribution of Total {metric}"
-            )
-            st.plotly_chart(fig_pie, use_container_width=True)
-
-# Visualization 1: Aggregated Analysis
+# Visualization 1: Aggregated Analysis (existing)
 st.markdown('<div class="sub-header">📊 Visualization 1: Regional Analysis by Initiative Status</div>', 
             unsafe_allow_html=True)
 
@@ -505,8 +510,273 @@ if col_initiative and not df_filtered.empty:
 else:
     st.error("❌ Cannot create visualization - no valid categorical column or empty dataset.")
 
-# Visualization 2: Distribution Analysis
-st.markdown('<div class="sub-header">📈 Visualization 2: Distribution Analysis</div>', 
+# NEW: Visualization 2: Comprehensive Regional Performance Analysis
+st.markdown('<div class="sub-header">🗺️ Visualization 2: Comprehensive Regional Performance Analysis</div>', 
+            unsafe_allow_html=True)
+
+st.markdown("""
+<div class="context-box">
+<strong>🎯 Purpose:</strong> This advanced regional analysis provides multi-dimensional insights into tourism performance 
+across geographic regions, enabling identification of high-performing areas and improvement opportunities through 
+interactive benchmarking and clustering analysis.
+</div>
+""", unsafe_allow_html=True)
+
+if col_governorate and governorate_choice and regional_metrics and len(df_filtered) > 0:
+    
+    # Create regional performance matrix
+    regional_performance = create_regional_performance_matrix(df_filtered, regional_metrics, col_governorate)
+    
+    if not regional_performance.empty:
+        # Create tabs for different analysis views
+        tab1, tab2, tab3, tab4 = st.tabs(["📊 Performance Matrix", "🔍 Scatter Analysis", "🏆 Rankings & Clusters", "📈 Benchmarks"])
+        
+        with tab1:
+            st.markdown("#### 📊 Regional Performance Heatmap")
+            
+            # Select columns for heatmap (means only)
+            mean_cols = [col for col in regional_performance.columns if col.endswith('_mean')]
+            
+            if mean_cols:
+                # Create heatmap
+                fig_heatmap = px.imshow(
+                    regional_performance[mean_cols].T,
+                    aspect='auto',
+                    color_continuous_scale='RdYlBu_r',
+                    title='Regional Performance Heatmap: Tourism Indicators',
+                    labels=dict(x="Regions", y="Metrics", color="Performance Score")
+                )
+                
+                fig_heatmap.update_layout(height=400)
+                st.plotly_chart(fig_heatmap, use_container_width=True)
+                
+                # Performance insights
+                insights = generate_regional_insights(regional_performance, metric)
+                if insights:
+                    col_i1, col_i2, col_i3 = st.columns(3)
+                    with col_i1:
+                        st.markdown(f"""
+                        <div class="performance-box">
+                        <strong>🏆 Top Performer:</strong><br>
+                        {insights.get('top_performer', 'N/A')}<br>
+                        <strong>Score:</strong> {insights.get('top_score', 0):.2f}
+                        </div>
+                        """, unsafe_allow_html=True)
+                    
+                    with col_i2:
+                        st.markdown(f"""
+                        <div class="insight-box">
+                        <strong>📊 Performance Range:</strong><br>
+                        Span: {insights.get('performance_range', 0):.2f}<br>
+                        <strong>Average:</strong> {insights.get('average_performance', 0):.2f}
+                        </div>
+                        """, unsafe_allow_html=True)
+                    
+                    with col_i3:
+                        st.markdown(f"""
+                        <div class="geographic-box">
+                        <strong>🎯 Needs Focus:</strong><br>
+                        {insights.get('bottom_performer', 'N/A')}<br>
+                        <strong>Score:</strong> {insights.get('bottom_score', 0):.2f}
+                        </div>
+                        """, unsafe_allow_html=True)
+        
+        with tab2:
+            st.markdown("#### 🔍 Interactive Regional Scatter Analysis")
+            
+            # Metric selectors for scatter plot
+            col_x, col_y = st.columns(2)
+            with col_x:
+                metric_x = st.selectbox("📈 X-Axis Metric:", regional_metrics, key="scatter_x")
+            with col_y:
+                metric_y = st.selectbox("📈 Y-Axis Metric:", 
+                                      [m for m in regional_metrics if m != metric_x], 
+                                      key="scatter_y")
+            
+            if metric_x and metric_y:
+                # Prepare scatter data
+                scatter_data = df_filtered.groupby(col_governorate).agg({
+                    metric_x: 'mean',
+                    metric_y: 'mean',
+                    metric: 'count'  # For bubble size
+                }).reset_index()
+                
+                scatter_data.columns = [col_governorate, f'avg_{metric_x}', f'avg_{metric_y}', 'data_points']
+                
+                # Add performance clusters if enough data
+                if len(scatter_data) >= 3:
+                    clusters = calculate_regional_clusters(scatter_data[['avg_' + metric_x, 'avg_' + metric_y]])
+                    scatter_data['cluster'] = [f"Cluster {c+1}" for c in clusters]
+                else:
+                    scatter_data['cluster'] = 'Single Group'
+                
+                # Create scatter plot
+                fig_scatter = px.scatter(
+                    scatter_data,
+                    x=f'avg_{metric_x}',
+                    y=f'avg_{metric_y}',
+                    size='data_points',
+                    color='cluster',
+                    hover_data=[col_governorate],
+                    title=f'Regional Performance: {metric_x} vs {metric_y}',
+                    size_max=30
+                )
+                
+                fig_scatter.update_layout(height=500)
+                st.plotly_chart(fig_scatter, use_container_width=True)
+                
+                # Quadrant analysis
+                x_median = scatter_data[f'avg_{metric_x}'].median()
+                y_median = scatter_data[f'avg_{metric_y}'].median()
+                
+                st.markdown("##### 📍 Quadrant Analysis")
+                high_high = scatter_data[(scatter_data[f'avg_{metric_x}'] >= x_median) & 
+                                       (scatter_data[f'avg_{metric_y}'] >= y_median)]
+                low_low = scatter_data[(scatter_data[f'avg_{metric_x}'] < x_median) & 
+                                     (scatter_data[f'avg_{metric_y}'] < y_median)]
+                
+                col_q1, col_q2 = st.columns(2)
+                with col_q1:
+                    st.success(f"🌟 **High Performers ({len(high_high)} regions):**")
+                    for _, row in high_high.iterrows():
+                        st.write(f"• {row[col_governorate]}")
+                
+                with col_q2:
+                    st.warning(f"⚠️ **Improvement Needed ({len(low_low)} regions):**")
+                    for _, row in low_low.iterrows():
+                        st.write(f"• {row[col_governorate]}")
+        
+        with tab3:
+            st.markdown("#### 🏆 Regional Rankings & Performance Clusters")
+            
+            # Regional rankings
+            if 'composite_score' in regional_performance.columns:
+                ranking_df = regional_performance.sort_values('composite_score', ascending=False).reset_index()
+                ranking_df['rank'] = range(1, len(ranking_df) + 1)
+                ranking_df['performance_tier'] = pd.cut(ranking_df['composite_score'], 
+                                                      bins=3, 
+                                                      labels=['🔴 Needs Improvement', '🟡 Average', '🟢 High Performing'])
+                
+                # Display rankings
+                st.markdown("##### 📊 Overall Regional Rankings")
+                display_cols = ['rank', col_governorate, 'composite_score', 'performance_tier']
+                if all(col in ranking_df.columns for col in display_cols):
+                    st.dataframe(ranking_df[display_cols].rename(columns={
+                        'rank': 'Rank',
+                        col_governorate: 'Region',
+                        'composite_score': 'Composite Score',
+                        'performance_tier': 'Performance Tier'
+                    }), use_container_width=True, hide_index=True)
+                
+                # Performance tier distribution
+                tier_counts = ranking_df['performance_tier'].value_counts()
+                fig_pie = px.pie(
+                    values=tier_counts.values,
+                    names=tier_counts.index,
+                    title="Regional Performance Distribution"
+                )
+                st.plotly_chart(fig_pie, use_container_width=True)
+        
+        with tab4:
+            st.markdown("#### 📈 Performance Benchmarking")
+            
+            if 'composite_score' in regional_performance.columns:
+                # Calculate benchmarks
+                national_avg = regional_performance['composite_score'].mean()
+                top_quartile = regional_performance['composite_score'].quantile(0.75)
+                performance_threshold_value = (regional_performance['composite_score'].max() * performance_threshold / 100)
+                
+                # Create benchmark visualization
+                fig_bench = go.Figure()
+                
+                # Add regional performance bars
+                fig_bench.add_bar(
+                    x=regional_performance.index,
+                    y=regional_performance['composite_score'],
+                    name="Regional Performance",
+                    marker_color='lightblue'
+                )
+                
+                # Add benchmark lines based on selected type
+                if benchmark_type == "Against National Average":
+                    fig_bench.add_hline(y=national_avg, line_dash="dash", 
+                                       line_color="red", 
+                                       annotation_text="National Average")
+                
+                elif benchmark_type == "Top Performers Only":
+                    fig_bench.add_hline(y=top_quartile, line_dash="dash", 
+                                       line_color="green", 
+                                       annotation_text="Top Quartile")
+                
+                elif benchmark_type == "Performance Quartiles":
+                    fig_bench.add_hline(y=regional_performance['composite_score'].quantile(0.25), 
+                                       line_dash="dot", line_color="orange", 
+                                       annotation_text="Q1")
+                    fig_bench.add_hline(y=regional_performance['composite_score'].quantile(0.5), 
+                                       line_dash="dash", line_color="blue", 
+                                       annotation_text="Median")
+                    fig_bench.add_hline(y=top_quartile, line_dash="dot", 
+                                       line_color="green", annotation_text="Q3")
+                
+                # Add performance threshold line
+                fig_bench.add_hline(y=performance_threshold_value, line_dash="dashdot", 
+                                   line_color="purple", 
+                                   annotation_text=f"Performance Threshold ({performance_threshold}%)")
+                
+                fig_bench.update_layout(
+                    title=f"Regional Performance vs {benchmark_type}",
+                    xaxis_title="Regions",
+                    yaxis_title="Composite Performance Score",
+                    height=500
+                )
+                
+                st.plotly_chart(fig_bench, use_container_width=True)
+                
+                # Benchmark analysis summary
+                above_threshold = regional_performance[regional_performance['composite_score'] >= performance_threshold_value]
+                below_threshold = regional_performance[regional_performance['composite_score'] < performance_threshold_value]
+                
+                col_bench1, col_bench2 = st.columns(2)
+                with col_bench1:
+                    st.markdown(f"""
+                    <div class="performance-box">
+                    <strong>✅ Above Threshold:</strong><br>
+                    {len(above_threshold)} regions ({len(above_threshold)/len(regional_performance)*100:.1f}%)<br>
+                    <strong>Average Score:</strong> {above_threshold['composite_score'].mean():.2f if len(above_threshold) > 0 else 'N/A'}
+                    </div>
+                    """, unsafe_allow_html=True)
+                
+                with col_bench2:
+                    st.markdown(f"""
+                    <div class="insight-box">
+                    <strong>⚠️ Below Threshold:</strong><br>
+                    {len(below_threshold)} regions ({len(below_threshold)/len(regional_performance)*100:.1f}%)<br>
+                    <strong>Average Score:</strong> {below_threshold['composite_score'].mean():.2f if len(below_threshold) > 0 else 'N/A'}
+                    </div>
+                    """, unsafe_allow_html=True)
+                
+                # Detailed benchmark comparison table
+                st.markdown("##### 📋 Detailed Benchmark Analysis")
+                benchmark_df = regional_performance[['composite_score']].copy()
+                benchmark_df['vs_national_avg'] = (benchmark_df['composite_score'] - national_avg).round(2)
+                benchmark_df['vs_top_quartile'] = (benchmark_df['composite_score'] - top_quartile).round(2)
+                benchmark_df['meets_threshold'] = benchmark_df['composite_score'] >= performance_threshold_value
+                
+                st.dataframe(benchmark_df.rename(columns={
+                    'composite_score': 'Performance Score',
+                    'vs_national_avg': 'vs National Avg',
+                    'vs_top_quartile': 'vs Top Quartile',
+                    'meets_threshold': 'Meets Threshold'
+                }), use_container_width=True)
+    
+    else:
+        st.warning("⚠️ No regional performance data available with current filters and metrics selection.")
+
+else:
+    st.info("🔍 Select regions and metrics in the sidebar to see comprehensive regional analysis.")
+
+# Distribution Analysis (existing section)
+st.markdown('<div class="sub-header">📈 Visualization 3: Distribution Analysis</div>', 
             unsafe_allow_html=True)
 
 st.markdown("""
@@ -582,7 +852,7 @@ st.markdown('<div class="sub-header">🔍 Additional Interactive Analysis</div>'
 
 analysis_type = st.selectbox(
     "Choose additional analysis:",
-    ["Summary Statistics", "Correlation Analysis", "Top Performers", "Geographic Insights"]
+    ["Summary Statistics", "Correlation Analysis", "Top Performers", "Regional Insights"]
 )
 
 if analysis_type == "Summary Statistics":
@@ -613,88 +883,165 @@ elif analysis_type == "Top Performers":
             for region, value in top_regions.items():
                 st.write(f"• {region}: {value:.2f}")
 
-elif analysis_type == "Geographic Insights":
-    st.markdown("### 🗺️ Geographic Performance Insights")
+elif analysis_type == "Regional Insights":
+    st.markdown("### 🗺️ Advanced Regional Performance Insights")
     
     if col_governorate and len(df_filtered) > 0:
         geo_insights = df_filtered.groupby(col_governorate)[metric].agg(['mean', 'count', 'std']).round(2)
         geo_insights.columns = ['Average', 'Data Points', 'Variability']
         geo_insights = geo_insights.sort_values('Average', ascending=False)
         
-        # Calculate regional statistics
+        # Calculate advanced regional statistics
         top_region = geo_insights.index[0]
         top_value = geo_insights.iloc[0]['Average']
         bottom_region = geo_insights.index[-1]
         bottom_value = geo_insights.iloc[-1]['Average']
         
+        # Performance consistency analysis
+        most_consistent = geo_insights.loc[geo_insights['Variability'].idxmin()]
+        least_consistent = geo_insights.loc[geo_insights['Variability'].idxmax()]
+        
         col_insight1, col_insight2 = st.columns(2)
         
         with col_insight1:
             st.markdown(f"""
-            <div class="geographic-box">
-            <strong>🏆 Best Performer:</strong> {top_region}<br>
-            <strong>Score:</strong> {top_value:.2f}<br>
-            <strong>🔻 Needs Improvement:</strong> {bottom_region}<br>
-            <strong>Score:</strong> {bottom_value:.2f}
+            <div class="performance-box">
+            <strong>🏆 Performance Leaders:</strong><br>
+            <strong>Best:</strong> {top_region} ({top_value:.2f})<br>
+            <strong>Most Consistent:</strong> {most_consistent.name} (σ={most_consistent['Variability']:.2f})<br>
+            <strong>🔻 Needs Attention:</strong> {bottom_region} ({bottom_value:.2f})
             </div>
             """, unsafe_allow_html=True)
         
         with col_insight2:
             performance_gap = top_value - bottom_value
             avg_variability = geo_insights['Variability'].mean()
+            total_data_points = geo_insights['Data Points'].sum()
+            
             st.markdown(f"""
             <div class="geographic-box">
-            <strong>📊 Performance Gap:</strong> {performance_gap:.2f}<br>
-            <strong>📈 Avg Variability:</strong> {avg_variability:.2f}<br>
-            <strong>🗺️ Regions Analyzed:</strong> {len(geo_insights)}
+            <strong>📊 Performance Analytics:</strong><br>
+            <strong>Performance Gap:</strong> {performance_gap:.2f}<br>
+            <strong>Avg Variability:</strong> {avg_variability:.2f}<br>
+            <strong>Total Data Points:</strong> {total_data_points:,}<br>
+            <strong>Regions Analyzed:</strong> {len(geo_insights)}
             </div>
             """, unsafe_allow_html=True)
         
-        st.dataframe(geo_insights, use_container_width=True)
+        # Enhanced regional performance table with rankings
+        geo_insights_ranked = geo_insights.copy()
+        geo_insights_ranked['Performance_Rank'] = range(1, len(geo_insights_ranked) + 1)
+        geo_insights_ranked['Consistency_Rank'] = geo_insights_ranked['Variability'].rank()
+        
+        st.markdown("#### 📋 Complete Regional Performance Matrix")
+        st.dataframe(geo_insights_ranked, use_container_width=True)
+        
+        # Regional performance visualization
+        fig_regional_compare = px.bar(
+            geo_insights.reset_index(),
+            x=col_governorate,
+            y='Average',
+            color='Variability',
+            size='Data Points',
+            title=f'Regional Performance Comparison: {metric}',
+            hover_data=['Variability', 'Data Points'],
+            color_continuous_scale='viridis'
+        )
+        fig_regional_compare.update_layout(height=400, xaxis_tickangle=45)
+        st.plotly_chart(fig_regional_compare, use_container_width=True)
 
-# Footer with insights and instructions
+# Interactive Feature Highlights
 st.markdown("---")
 st.markdown("""
-### 🚀 How to Use This Enhanced Dashboard:
+### 🚀 Interactive Features Demonstration
 
-1. **Enhanced Geographic Filtering**: 
-   - Use quick selection buttons (All/None/Reset) for efficient region management
-   - Multi-level filtering: Governorate → Area for detailed geographic analysis
-   - Choose geographic analysis modes for different perspectives
+**🎛️ Feature 1: Performance Benchmarking Controls**
+- **Location:** Regional Analysis Controls → Benchmark Analysis dropdown
+- **Impact:** Changes benchmark lines in Visualization 2, Tab 4 (Benchmarks)
+- **Options:** National Average, Top Performers, Regional Clusters, Performance Quartiles
+- **Insight Generation:** Switch between "Against National Average" and "Performance Quartiles" to see how regions perform against different standards
 
-2. **Interactive Features**:
-   - **Feature 1**: Multi-level geographic filtering with coverage indicators
-   - **Feature 2**: Geographic analysis modes (Compare, Ranking, Distribution)
+**📊 Feature 2: Multi-Metric Regional Selection**
+- **Location:** Regional Analysis Controls → Select Metrics for Regional Analysis
+- **Impact:** Updates all tabs in Visualization 2 (Performance Matrix, Scatter Analysis, Rankings)
+- **Dynamic Effect:** Heatmap colors change, scatter plot axes update, composite scores recalculate
+- **Real-time Analysis:** Select different metric combinations to discover regional patterns
 
-3. **Data Analysis**: 
-   - Switch between different tourism metrics and aggregation methods
-   - Examine data distribution and identify outliers using enhanced visualizations
+### 💡 How to Generate Insights:
 
-### 💡 Key Design Decisions:
+1. **Performance Benchmarking Workflow:**
+   - Select "Top Performers Only" to identify benchmark regions
+   - Switch to "Performance Quartiles" to see distribution spread
+   - Adjust Performance Threshold slider to set custom standards
+   - Observe how regions move above/below threshold lines
 
-- **Smart Geographic Hierarchy**: Automatically detects and links governorate and area columns
-- **Interactive Filter Management**: Session state preserves selections and provides quick controls
-- **Multiple Analysis Perspectives**: Standard analysis plus specialized geographic modes
-- **Enhanced Visual Feedback**: Coverage percentages and filter summaries
-- **Comprehensive Insights**: Combines statistical analysis with geographic intelligence
+2. **Multi-Metric Analysis Workflow:**
+   - Start with 2-3 core tourism metrics
+   - Use Scatter Analysis tab to find performance correlations
+   - Check Performance Matrix for comprehensive regional comparison
+   - Switch metrics to validate patterns across different indicators
+
+3. **Regional Grouping Intelligence:**
+   - Toggle between "Individual Regions" and "Performance Tiers"
+   - Use clustering to identify similar-performing regional groups
+   - Combine with geographic filters for targeted analysis
+
+### 🎯 Key Design Decisions:
+
+- **Interactive Filter Persistence**: Session state maintains selections across interactions
+- **Multi-Level Geographic Analysis**: Governorate → Area hierarchy with automatic filtering
+- **Real-Time Benchmarking**: Dynamic threshold lines that respond to slider changes
+- **Composite Scoring**: Automatic calculation of performance indices from selected metrics
+- **Clustering Integration**: ML-powered regional grouping for pattern discovery
+- **Progressive Disclosure**: Tabbed interface reveals complexity gradually
 """)
 
 # Export functionality
-if st.button("📥 Export Filtered Data"):
-    csv = df_filtered.to_csv(index=False)
-    
-    # Create filename with filter info
-    filter_info = []
-    if governorate_choice and len(governorate_choice) < len(df[col_governorate].unique()):
-        filter_info.append(f"{len(governorate_choice)}regions")
-    if area_choice and col_area and len(area_choice) < len(df[col_area].unique()):
-        filter_info.append(f"{len(area_choice)}areas")
-    
-    filter_suffix = "_" + "_".join(filter_info) if filter_info else ""
-    
-    st.download_button(
-        label="Download Filtered Data as CSV",
-        data=csv,
-        file_name=f"filtered_tourism_data{filter_suffix}_{pd.Timestamp.now().strftime('%Y%m%d_%H%M%S')}.csv",
-        mime="text/csv"
-    )
+st.markdown("### 📥 Export and Sharing")
+
+col_export1, col_export2 = st.columns(2)
+
+with col_export1:
+    if st.button("📊 Export Filtered Data"):
+        csv = df_filtered.to_csv(index=False)
+        
+        # Create filename with filter info
+        filter_info = []
+        if governorate_choice and len(governorate_choice) < len(df[col_governorate].unique()):
+            filter_info.append(f"{len(governorate_choice)}regions")
+        if area_choice and col_area and len(area_choice) < len(df[col_area].unique()):
+            filter_info.append(f"{len(area_choice)}areas")
+        
+        filter_suffix = "_" + "_".join(filter_info) if filter_info else ""
+        
+        st.download_button(
+            label="Download Filtered Data as CSV",
+            data=csv,
+            file_name=f"filtered_tourism_data{filter_suffix}_{pd.Timestamp.now().strftime('%Y%m%d_%H%M%S')}.csv",
+            mime="text/csv"
+        )
+
+with col_export2:
+    if col_governorate and regional_metrics and not df_filtered.empty:
+        regional_analysis = create_regional_performance_matrix(df_filtered, regional_metrics, col_governorate)
+        if not regional_analysis.empty:
+            if st.button("📈 Export Regional Analysis"):
+                regional_csv = regional_analysis.to_csv()
+                st.download_button(
+                    label="Download Regional Performance Analysis",
+                    data=regional_csv,
+                    file_name=f"regional_performance_analysis_{pd.Timestamp.now().strftime('%Y%m%d_%H%M%S')}.csv",
+                    mime="text/csv"
+                )
+
+# Footer with usage instructions
+st.markdown("---")
+st.markdown("""
+<div class="context-box">
+<strong>🎥 Video Demonstration Points:</strong><br>
+1. Show Performance Benchmarking: Switch between benchmark types and highlight threshold changes<br>
+2. Demonstrate Multi-Metric Selection: Change metrics and show real-time updates across all tabs<br>
+3. Highlight Regional Insights: Use scatter analysis to identify high-performing vs improvement-needed regions<br>
+4. Explain Design Decisions: Multi-level filtering, progressive disclosure, and ML-powered clustering
+</div>
+""", unsafe_allow_html=True)
