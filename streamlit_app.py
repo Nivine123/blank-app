@@ -35,9 +35,22 @@ st.markdown("""
     margin: 1rem 0;
     border-radius: 5px;
 }
+.metric-card {
+    background-color: #f5f5f5;
+    padding: 1rem;
+    border-radius: 10px;
+    text-align: center;
+}
 .context-box {
     background-color: #fff3e0;
     border-left: 5px solid #ff9800;
+    padding: 1rem;
+    margin: 1rem 0;
+    border-radius: 5px;
+}
+.geographic-box {
+    background-color: #f3e5f5;
+    border-left: 5px solid #9c27b0;
     padding: 1rem;
     margin: 1rem 0;
     border-radius: 5px;
