@@ -1,6 +1,7 @@
 import streamlit as st
 import pandas as pd
 import plotly.express as px
+import plotly.graph_objects as go
 import numpy as np
 
 # Page configuration
@@ -139,9 +140,11 @@ col_initiative = find_col(df, [
 
 col_tourism_index = find_col(df, ["Tourism Index", "Tourism_Index", "tourism index"])
 col_governorate = find_col(df, ["Governorate", "governorate", "Region", "region", "Mohafazat", "mohafazat"])
+
+# Look for additional geographic columns
 col_area = find_col(df, ["Area", "City", "Municipality", "District", "Caza", "area", "city"])
 
-# Count initiatives and tourism index by region
+# Filter rows where initiatives exist
 df_initiatives = df[df[col_initiative] == 1]
 
 # Count initiatives by region
@@ -155,7 +158,7 @@ tourism_index_by_region.columns = ['Region', 'Average Tourism Index']
 # Merge the two dataframes
 merged_df = pd.merge(initiative_counts_by_region, tourism_index_by_region, on='Region')
 
-# Bar chart: Number of initiatives and average tourism index by region
+# Visualization of Number of Initiatives and Tourism Index by Region
 fig = px.bar(
     merged_df,
     x='Region',
