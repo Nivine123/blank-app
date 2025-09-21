@@ -4,8 +4,7 @@ import plotly.express as px
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 import numpy as np
-from sklearn.preprocessing import StandardScaler
-from sklearn.cluster import KMeans
+import math
 
 # Page configuration
 st.set_page_config(
@@ -128,7 +127,7 @@ def create_regional_performance_matrix(df_filtered, selected_metrics, col_govern
 
 @st.cache_data  
 def calculate_regional_clusters(performance_data):
-    """Apply clustering algorithm to identify regional performance groups"""
+    """Apply simple clustering algorithm to identify regional performance groups using built-in functions"""
     if len(performance_data) < 3:
         return np.zeros(len(performance_data))
     
@@ -138,15 +137,36 @@ def calculate_regional_clusters(performance_data):
         return np.zeros(len(performance_data))
     
     try:
-        # Standardize metrics
-        scaler = StandardScaler()
-        standardized_data = scaler.fit_transform(performance_data[numeric_cols].fillna(0))
+        # Simple performance-based clustering using percentiles
+        # Calculate composite performance score
+        data_clean = performance_data[numeric_cols].fillna(performance_data[numeric_cols].mean())
         
-        # Apply clustering
-        n_clusters = min(3, len(performance_data))
-        clusters = KMeans(n_clusters=n_clusters, random_state=42).fit_predict(standardized_data)
-        return clusters
-    except:
+        # Normalize data manually (min-max scaling)
+        normalized_data = data_clean.copy()
+        for col in numeric_cols:
+            col_min = data_clean[col].min()
+            col_max = data_clean[col].max()
+            if col_max != col_min:
+                normalized_data[col] = (data_clean[col] - col_min) / (col_max - col_min)
+            else:
+                normalized_data[col] = 0.5  # If all values are same, set to middle
+        
+        # Calculate composite score as mean of normalized values
+        composite_scores = normalized_data.mean(axis=1)
+        
+        # Create 3 clusters based on percentiles
+        clusters = np.zeros(len(composite_scores))
+        p33 = composite_scores.quantile(0.33)
+        p67 = composite_scores.quantile(0.67)
+        
+        clusters[composite_scores >= p67] = 2  # High performers
+        clusters[(composite_scores >= p33) & (composite_scores < p67)] = 1  # Average
+        clusters[composite_scores < p33] = 0  # Needs improvement
+        
+        return clusters.astype(int)
+        
+    except Exception as e:
+        # If anything fails, return simple ranking-based clusters
         return np.zeros(len(performance_data))
 
 def generate_regional_insights(df_regional, metric):
@@ -606,7 +626,8 @@ if col_governorate and governorate_choice and regional_metrics and len(df_filter
                 # Add performance clusters if enough data
                 if len(scatter_data) >= 3:
                     clusters = calculate_regional_clusters(scatter_data[['avg_' + metric_x, 'avg_' + metric_y]])
-                    scatter_data['cluster'] = [f"Cluster {c+1}" for c in clusters]
+                    cluster_labels = ['🔴 Needs Improvement', '🟡 Average Performance', '🟢 High Performers']
+                    scatter_data['cluster'] = [cluster_labels[c] if c < len(cluster_labels) else 'Other' for c in clusters]
                 else:
                     scatter_data['cluster'] = 'Single Group'
                 
