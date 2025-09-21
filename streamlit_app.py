@@ -132,44 +132,153 @@ with st.expander("📋 Column Names"):
     cols_df = pd.DataFrame({"Column Names": df.columns.tolist()})
     st.dataframe(cols_df, use_container_width=True)
 
-# Column detection with better error handling
+# Column detection
+col_initiative = find_col(df, [
+    "Existence of initiatives", "Existence of initiativ", "existence of initiativ", 
+    "initiatives and projects", "initiatives"
+])
+
+col_tourism_index = find_col(df, ["Tourism Index", "Tourism_Index", "tourism index"])
+col_total_hotels = find_col(df, ["Total number of hotels", "Total number of hotel", "total hotels", "total number"])
 col_governorate = find_col(df, ["Governorate", "governorate", "Region", "region", "Mohafazat", "mohafazat"])
+
+# Look for additional geographic columns
 col_area = find_col(df, ["Area", "City", "Municipality", "District", "Caza", "area", "city"])
+col_zone = find_col(df, ["Zone", "zone", "Sector", "sector"])
 
-if col_governorate is None or col_area is None:
-    st.error("❌ Could not find required columns (Governorate or Area) in the dataset.")
-    st.stop()
+# Numeric columns for analysis
+numeric_cols = df.select_dtypes(include=["number"]).columns.tolist()
+preferred_metrics = []
+if col_tourism_index and col_tourism_index in numeric_cols:
+    preferred_metrics.append(col_tourism_index)
+if col_total_hotels and col_total_hotels in numeric_cols:
+    preferred_metrics.append(col_total_hotels)
+for c in numeric_cols:
+    if c not in preferred_metrics:
+        preferred_metrics.append(c)
 
-# Sidebar filters
-st.sidebar.markdown("## 🎛️ Filtering Options")
-selected_governorate = st.sidebar.selectbox("Select Governorate", df[col_governorate].unique())
-selected_area = st.sidebar.selectbox("Select Area", df[col_area].unique())
+# Initialize session state for regional filtering
+if 'governorate_choice' not in st.session_state:
+    if col_governorate:
+        st.session_state.governorate_choice = sorted(df[col_governorate].dropna().unique().tolist())
+    else:
+        st.session_state.governorate_choice = []
 
-df_filtered = df[(df[col_governorate] == selected_governorate) & (df[col_area] == selected_area)]
+if 'area_choice' not in st.session_state:
+    if col_area:
+        st.session_state.area_choice = sorted(df[col_area].dropna().unique().tolist())
+    else:
+        st.session_state.area_choice = []
 
-# Visualization 1: Boxplot of Tourism Index Distribution
+# ENHANCED REGIONAL FILTERING SECTION
+st.sidebar.markdown("## 🗺️ Enhanced Geographic Filters")
+
+# Primary governorate filter with enhanced controls
+governorate_choice = None
+if col_governorate:
+    st.sidebar.markdown("### 🏛️ Primary Region Filter")
+    
+    uniq_gov = sorted(df[col_governorate].dropna().unique().tolist())
+    
+    # Quick selection buttons
+    col_all, col_none, col_reset = st.sidebar.columns(3)
+    with col_all:
+        if st.button("✅ All", key="select_all_gov", help="Select all regions"):
+            st.session_state.governorate_choice = uniq_gov
+            st.rerun()
+    with col_none:
+        if st.button("❌ None", key="deselect_all_gov", help="Deselect all regions"):
+            st.session_state.governorate_choice = []
+            st.rerun()
+    with col_reset:
+        if st.button("🔄 Reset", key="reset_gov", help="Reset to default"):
+            st.session_state.governorate_choice = uniq_gov
+            st.rerun()
+    
+    # Main governorate selector
+    governorate_choice = st.sidebar.multiselect(
+        f"🏛️ Select {col_governorate}s",
+        options=uniq_gov,
+        default=st.session_state.governorate_choice,
+        help="Filter analysis by specific governorates/regions",
+        key="gov_multiselect"
+    )
+    
+    # Update session state
+    st.session_state.governorate_choice = governorate_choice
+    
+    # Show selection summary
+    if len(governorate_choice) != len(uniq_gov):
+        coverage_pct = (len(governorate_choice) / len(uniq_gov)) * 100
+        st.sidebar.info(f"📊 Selected: {len(governorate_choice)}/{len(uniq_gov)} regions ({coverage_pct:.1f}%)")
+
+# Secondary area filter (if available)
+area_choice = None
+if col_area:
+    st.sidebar.markdown("### 🏘️ Sub-Area Filter")
+    
+    # Filter areas based on selected governorates
+    if governorate_choice and len(governorate_choice) > 0:
+        available_areas = df[df[col_governorate].isin(governorate_choice)][col_area].dropna().unique()
+    else:
+        available_areas = df[col_area].dropna().unique()
+    
+    available_areas = sorted(available_areas.tolist())
+    
+    if available_areas:
+        # Quick selection for areas
+        col_all_area, col_none_area = st.sidebar.columns(2)
+        with col_all_area:
+            if st.button("✅ All Areas", key="select_all_areas", help="Select all sub-areas"):
+                st.session_state.area_choice = available_areas
+                st.rerun()
+        with col_none_area:
+            if st.button("❌ No Areas", key="deselect_all_areas", help="Deselect all sub-areas"):
+                st.session_state.area_choice = []
+                st.rerun()
+        
+        # Filter session state areas to only include available ones
+        valid_area_choice = [area for area in st.session_state.area_choice if area in available_areas]
+        if not valid_area_choice and available_areas:
+            valid_area_choice = available_areas
+        
+        area_choice = st.sidebar.multiselect(
+            f"🏘️ Select {col_area}s",
+            options=available_areas,
+            default=valid_area_choice,
+            help="Further filter by specific areas within selected regions"
+        )
+        
+        st.session_state.area_choice = area_choice
+        
+        # Show area selection summary
+        if len(area_choice) != len(available_areas):
+            area_coverage = (len(area_choice) / len(available_areas)) * 100 if available_areas else 0
+            st.sidebar.info(f"🏘️ Areas: {len(area_choice)}/{len(available_areas)} ({area_coverage:.1f}%)")
+
+# Visualization 1: Boxplot for Tourism Index Distribution
 st.markdown('<div class="sub-header">📈 Visualization 1: Tourism Index Distribution</div>', unsafe_allow_html=True)
 
 if 'Tourism Index' in df.columns:
-    fig = px.box(df_filtered, y='Tourism Index', title="Distribution of Tourism Index by Region")
+    fig = px.box(df, y='Tourism Index', title="Distribution of Tourism Index")
     st.plotly_chart(fig, use_container_width=True)
 else:
     st.error("❌ No valid Tourism Index column found.")
 
-# Visualization 2: Number of Initiatives by Region
-st.markdown('<div class="sub-header">📊 Visualization 2: Number of Initiatives by Region</div>', unsafe_allow_html=True)
+# Visualization 2: Initiatives by Region
+st.markdown('<div class="sub-header">📊 Visualization 2: Tourism Initiatives by Region</div>', unsafe_allow_html=True)
 
 if 'refArea' in df.columns and 'Existence of initiatives' in df.columns:
-    # Filter data based on initiative existence
-    initiatives_exist_df = df_filtered[df_filtered['Existence of initiatives'] == 1]
+    # Filter the data to include only rows where initiatives exist
+    initiatives_exist_df = df[df['Existence of initiatives'] == 1]
     
-    # Count number of initiatives per region
+    # Count the number of initiatives per region
     initiative_counts_by_region = initiatives_exist_df['refArea'].value_counts().reset_index()
     initiative_counts_by_region.columns = ['refArea', 'Number of Initiatives']
     
     # Create bar chart visualization
     fig2 = px.bar(initiative_counts_by_region, x='refArea', y='Number of Initiatives', 
-                  title="Number of Initiatives by Region", text='Number of Initiatives')
+                  title="Number of Tourism Initiatives by Region", text='Number of Initiatives')
     fig2.update_traces(texttemplate='%{text}', textposition='outside')
     st.plotly_chart(fig2, use_container_width=True)
 else:
@@ -204,7 +313,7 @@ st.markdown("""
 
 # Export functionality
 if st.button("📥 Export Filtered Data"):
-    csv = df_filtered.to_csv(index=False)
+    csv = df.to_csv(index=False)
     st.download_button(
         label="Download Filtered Data as CSV",
         data=csv,
