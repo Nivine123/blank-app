@@ -212,36 +212,146 @@ if col_governorate:
         coverage_pct = (len(governorate_choice) / len(uniq_gov)) * 100
         st.sidebar.info(f"📊 Selected: {len(governorate_choice)}/{len(uniq_gov)} regions ({coverage_pct:.1f}%)")
 
-# Visualization for Initiatives by Region
-if st.sidebar.checkbox("Show Initiatives by Region", value=True):
-    st.markdown('<div class="sub-header">📊 Initiatives by Region</div>', unsafe_allow_html=True)
+# Secondary area filter (if available)
+area_choice = None
+if col_area:
+    st.sidebar.markdown("### 🏘️ Sub-Area Filter")
     
-    # Filter and Aggregate the Data for Initiatives by Region
-    initiatives_exist_df = df[df[col_initiative] == 1]
-    initiatives_by_region = initiatives_exist_df.groupby(col_governorate)[col_initiative].count().reset_index()
-    initiatives_by_region.columns = [col_governorate, 'Number of Initiatives']
+    # Filter areas based on selected governorates
+    if governorate_choice and len(governorate_choice) > 0:
+        available_areas = df[df[col_governorate].isin(governorate_choice)][col_area].dropna().unique()
+    else:
+        available_areas = df[col_area].dropna().unique()
     
-    # Bar chart for initiatives by region
-    fig_bar = px.bar(
-        initiatives_by_region,
-        x=col_governorate,
-        y='Number of Initiatives',
-        title='Number of Initiatives by Region',
-        labels={col_governorate: "Region", 'Number of Initiatives': 'Number of Initiatives'},
-        color='Number of Initiatives',
-        color_continuous_scale='Viridis'
+    available_areas = sorted(available_areas.tolist())
+    
+    if available_areas:
+        # Quick selection for areas
+        col_all_area, col_none_area = st.sidebar.columns(2)
+        with col_all_area:
+            if st.button("✅ All Areas", key="select_all_areas", help="Select all sub-areas"):
+                st.session_state.area_choice = available_areas
+                st.rerun()
+        with col_none_area:
+            if st.button("❌ No Areas", key="deselect_all_areas", help="Deselect all sub-areas"):
+                st.session_state.area_choice = []
+                st.rerun()
+        
+        # Filter session state areas to only include available ones
+        valid_area_choice = [area for area in st.session_state.area_choice if area in available_areas]
+        if not valid_area_choice and available_areas:
+            valid_area_choice = available_areas
+        
+        area_choice = st.sidebar.multiselect(
+            f"🏘️ Select {col_area}s",
+            options=available_areas,
+            default=valid_area_choice,
+            help="Further filter by specific areas within selected regions"
+        )
+        
+        st.session_state.area_choice = area_choice
+        
+        # Show area selection summary
+        if len(area_choice) != len(available_areas):
+            area_coverage = (len(area_choice) / len(available_areas)) * 100 if available_areas else 0
+            st.sidebar.info(f"🏘️ Areas: {len(area_choice)}/{len(available_areas)} ({area_coverage:.1f}%)")
+
+# Geographic Analysis Mode
+st.sidebar.markdown("### 🔍 Geographic Analysis Mode")
+geo_analysis_mode = st.sidebar.selectbox(
+    "Analysis Focus:",
+    ["Standard Analysis", "Compare Regions", "Regional Ranking", "Geographic Distribution"],
+    help="Choose how to analyze the geographic data"
+)
+
+# Sidebar controls for other filters
+st.sidebar.markdown("## 🎛️ Other Interactive Controls")
+
+# Initiative filter
+selected_initiatives = None
+if col_initiative:
+    uniq_init = sorted(df[col_initiative].dropna().unique().tolist())
+    selected_initiatives = st.sidebar.multiselect(
+        "🏗️ Initiative Status Filter",
+        options=uniq_init,
+        default=uniq_init,
+        help="Filter by existence of tourism initiatives"
     )
-    fig_bar.update_layout(xaxis_tickangle=45)
-    st.plotly_chart(fig_bar, use_container_width=True)
+else:
+    categorical_cols = df.select_dtypes(include=["object", "category"]).columns.tolist()
+    if categorical_cols:
+        selected_cat = st.sidebar.selectbox("📊 Choose categorical column", options=[None] + categorical_cols)
+        if selected_cat:
+            col_initiative = selected_cat
+            uniq_init = sorted(df[col_initiative].dropna().unique().tolist())
+            selected_initiatives = st.sidebar.multiselect(f"Filter by {selected_cat}", options=uniq_init, default=uniq_init)
+
+# Metric and aggregation selection
+if preferred_metrics:
+    metric = st.sidebar.selectbox("📈 Select Metric to Analyze", preferred_metrics, 
+                                help="Choose the numeric variable for analysis")
+    agg_func = st.sidebar.selectbox("🔢 Aggregation Method", 
+                                  ["mean", "median", "sum", "count"], 
+                                  index=0,
+                                  help="How to aggregate the metric by groups")
+else:
+    st.error("❌ No numeric columns found in the dataset!")
+    st.stop()
+
+# Apply filters
+df_filtered = df.copy()
+filter_steps = []
+
+# Apply governorate filter
+if governorate_choice is not None and len(governorate_choice) > 0:
+    df_filtered = df_filtered[df_filtered[col_governorate].isin(governorate_choice)]
+    filter_steps.append(f"Governorate: {len(governorate_choice)} selected")
+
+# Apply area filter
+if area_choice is not None and len(area_choice) > 0 and col_area:
+    df_filtered = df_filtered[df_filtered[col_area].isin(area_choice)]
+    filter_steps.append(f"Areas: {len(area_choice)} selected")
+
+# Apply initiative filter
+if col_initiative and selected_initiatives is not None and len(selected_initiatives) > 0:
+    df_filtered = df_filtered[df_filtered[col_initiative].isin(selected_initiatives)]
+    filter_steps.append(f"Initiatives: {len(selected_initiatives)} selected")
+
+# Display filter summary
+if len(df_filtered) != len(df):
+    st.info(f"📊 Showing {len(df_filtered):,} out of {len(df):,} records | Filters: {' | '.join(filter_steps)}")
+
+# Initiatives by Region Visualization
+if col_initiative and col_governorate:
+    initiatives_exist_df = df_filtered[df_filtered[col_initiative] == 1]
     
-    # Pie chart for initiatives by region
-    fig_pie = px.pie(
-        initiatives_by_region,
-        values='Number of Initiatives',
-        names=col_governorate,
-        title='Initiatives Distribution by Region'
-    )
-    st.plotly_chart(fig_pie, use_container_width=True)
+    if initiatives_exist_df.empty:
+        st.warning("⚠️ No initiatives found in the selected data.")
+    else:
+        initiatives_by_region = initiatives_exist_df.groupby(col_governorate)[col_initiative].count().reset_index()
+        initiatives_by_region.columns = [col_governorate, 'Number of Initiatives']
+        
+        # Bar chart for initiatives by region
+        fig_bar = px.bar(
+            initiatives_by_region,
+            x=col_governorate,
+            y='Number of Initiatives',
+            title='Number of Initiatives by Region',
+            labels={col_governorate: "Region", 'Number of Initiatives': 'Number of Initiatives'},
+            color='Number of Initiatives',
+            color_continuous_scale='Viridis'
+        )
+        fig_bar.update_layout(xaxis_tickangle=45)
+        st.plotly_chart(fig_bar, use_container_width=True)
+        
+        # Pie chart for initiatives by region
+        fig_pie = px.pie(
+            initiatives_by_region,
+            values='Number of Initiatives',
+            names=col_governorate,
+            title='Initiatives Distribution by Region'
+        )
+        st.plotly_chart(fig_pie, use_container_width=True)
 
 # Footer with insights and instructions
 st.markdown("---")
