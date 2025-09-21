@@ -1,6 +1,7 @@
 import streamlit as st
 import pandas as pd
 import plotly.express as px
+import numpy as np
 
 # Page configuration
 st.set_page_config(
@@ -33,9 +34,22 @@ st.markdown("""
     margin: 1rem 0;
     border-radius: 5px;
 }
+.metric-card {
+    background-color: #f5f5f5;
+    padding: 1rem;
+    border-radius: 10px;
+    text-align: center;
+}
 .context-box {
     background-color: #fff3e0;
     border-left: 5px solid #ff9800;
+    padding: 1rem;
+    margin: 1rem 0;
+    border-radius: 5px;
+}
+.geographic-box {
+    background-color: #f3e5f5;
+    border-left: 5px solid #9c27b0;
     padding: 1rem;
     margin: 1rem 0;
     border-radius: 5px;
@@ -51,10 +65,11 @@ st.markdown("""
 <strong>📊 Dashboard Overview</strong><br>
 This interactive dashboard analyzes tourism data across different regions and initiative types. 
 The visualizations help identify patterns in tourism development and infrastructure distribution.
+Use the enhanced sidebar controls to filter data and explore different geographic perspectives.
 </div>
 """, unsafe_allow_html=True)
 
-# Dataset loading and reading
+# Default dataset URL
 DEFAULT_CSV_URL = "https://linked.aub.edu.lb/pkgcube/data/551015b5649368dd2612f795c2a9c2d8_20240902_115953.csv"
 
 @st.cache_data
@@ -65,15 +80,24 @@ def load_data_from_url(url):
     except Exception as e:
         return None, str(e)
 
-# Column names for filtering and analysis
-column_initiatives = 'Existence of initiatives and projects in the past five years to improve the tourism sector - exists'
-column_tourism_index = 'Tourism Index'
-column_ref_area = 'refArea'
+def find_col(df, candidates):
+    """Return first column in df whose name contains any of the candidate substrings (case-insensitive)."""
+    if df is None:
+        return None
+    cols = df.columns.tolist()
+    for cand in candidates:
+        cand_l = cand.lower()
+        for original in cols:
+            if cand_l in original.lower():
+                return original
+    return None
 
-# Load data (either from URL or file upload)
+# Sidebar for data loading and controls
+st.sidebar.markdown("## 📁 Data Source")
+use_url = st.sidebar.checkbox("Load dataset from URL", value=True)
+
 df = None
 err = None
-use_url = st.sidebar.checkbox("Load dataset from URL", value=True)
 
 if use_url:
     st.sidebar.caption("📡 Loading from online source...")
@@ -94,7 +118,7 @@ if df is None:
     st.warning("⚠️ No data loaded yet. Please enable URL loading or upload a CSV file using the sidebar.")
     st.stop()
 
-# Data preview
+# Data info
 st.sidebar.markdown("## 📊 Dataset Information")
 st.sidebar.metric("Total Rows", f"{df.shape[0]:,}")
 st.sidebar.metric("Total Columns", f"{df.shape[1]}")
@@ -103,15 +127,29 @@ st.sidebar.metric("Total Columns", f"{df.shape[1]}")
 with st.expander("🔍 Preview Dataset (First 5 Rows)"):
     st.dataframe(df.head(), use_container_width=True)
 
-# Regional and Initiative filtering
-df_initiatives = df[df[column_initiatives] == 1]
+with st.expander("📋 Column Names"):
+    cols_df = pd.DataFrame({"Column Names": df.columns.tolist()})
+    st.dataframe(cols_df, use_container_width=True)
+
+# Column detection
+col_initiative = find_col(df, [
+    "Existence of initiatives", "Existence of initiativ", "existence of initiativ", 
+    "initiatives and projects", "initiatives"
+])
+
+col_tourism_index = find_col(df, ["Tourism Index", "Tourism_Index", "tourism index"])
+col_governorate = find_col(df, ["Governorate", "governorate", "Region", "region", "Mohafazat", "mohafazat"])
+col_area = find_col(df, ["Area", "City", "Municipality", "District", "Caza", "area", "city"])
+
+# Count initiatives and tourism index by region
+df_initiatives = df[df[col_initiative] == 1]
 
 # Count initiatives by region
-initiative_counts_by_region = df_initiatives[column_ref_area].value_counts().reset_index()
+initiative_counts_by_region = df_initiatives[col_governorate].value_counts().reset_index()
 initiative_counts_by_region.columns = ['Region', 'Number of Initiatives']
 
 # Calculate average tourism index by region
-tourism_index_by_region = df_initiatives.groupby(column_ref_area)[column_tourism_index].mean().reset_index()
+tourism_index_by_region = df_initiatives.groupby(col_governorate)[col_tourism_index].mean().reset_index()
 tourism_index_by_region.columns = ['Region', 'Average Tourism Index']
 
 # Merge the two dataframes
@@ -138,6 +176,26 @@ fig.update_layout(
 
 # Show the plot
 st.plotly_chart(fig)
+
+# Enhanced key metrics display
+col1, col2, col3, col4, col5 = st.columns(5)
+
+with col1:
+    total_records = len(df)
+    st.metric("📊 Records", f"{total_records:,}")
+
+with col2:
+    regions_count = len(merged_df)
+    st.metric("🏛️ Regions", regions_count)
+
+with col3:
+    areas_count = len(df_initiatives[col_area].dropna().unique())
+    st.metric("🏘️ Areas", areas_count)
+
+with col4:
+    if col_tourism_index in df.columns:
+        avg_tourism_index = df[col_tourism_index].mean()
+        st.metric("📈 Avg Tourism Index", f"{avg_tourism_index:.1f}")
 
 # Export functionality
 if st.button("📥 Export Filtered Data"):
