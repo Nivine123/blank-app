@@ -54,7 +54,7 @@ The visualizations help identify patterns in tourism development and infrastruct
 </div>
 """, unsafe_allow_html=True)
 
-# Dataset loading and reading
+# Default dataset URL
 DEFAULT_CSV_URL = "https://linked.aub.edu.lb/pkgcube/data/551015b5649368dd2612f795c2a9c2d8_20240902_115953.csv"
 
 @st.cache_data
@@ -148,3 +148,29 @@ if st.button("📥 Export Filtered Data"):
         file_name="filtered_tourism_data.csv",
         mime="text/csv"
     )
+
+# Add region-based analysis to the original dashboard
+st.markdown('<div class="sub-header">🗺️ Geographic Insights: Initiatives by Region</div>', unsafe_allow_html=True)
+
+# Add region-based analysis
+region_analysis = df.groupby(column_ref_area)[column_initiatives].sum().reset_index()
+region_analysis.columns = ['Region', 'Initiatives Count']
+
+fig_region = px.bar(
+    region_analysis,
+    x='Region',
+    y='Initiatives Count',
+    title='Total Initiatives by Region',
+    labels={'Region': 'Region', 'Initiatives Count': 'Number of Initiatives'},
+    color='Initiatives Count',
+    color_continuous_scale='Viridis',
+    hover_data=['Initiatives Count']
+)
+
+fig_region.update_layout(
+    xaxis={'tickangle': 45},  # Rotate region names
+    showlegend=False
+)
+
+# Show the region-based initiatives chart
+st.plotly_chart(fig_region)
