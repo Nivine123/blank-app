@@ -1,6 +1,8 @@
 import streamlit as st
 import pandas as pd
 import plotly.express as px
+import plotly.graph_objects as go
+import numpy as np
 
 # Page configuration
 st.set_page_config(
@@ -40,6 +42,13 @@ st.markdown("""
     margin: 1rem 0;
     border-radius: 5px;
 }
+.geographic-box {
+    background-color: #f3e5f5;
+    border-left: 5px solid #9c27b0;
+    padding: 1rem;
+    margin: 1rem 0;
+    border-radius: 5px;
+}
 </style>
 """, unsafe_allow_html=True)
 
@@ -51,6 +60,7 @@ st.markdown("""
 <strong>📊 Dashboard Overview</strong><br>
 This interactive dashboard analyzes tourism data across different regions and initiative types. 
 The visualizations help identify patterns in tourism development and infrastructure distribution.
+Use the enhanced sidebar controls to filter data and explore different geographic perspectives.
 </div>
 """, unsafe_allow_html=True)
 
@@ -65,15 +75,24 @@ def load_data_from_url(url):
     except Exception as e:
         return None, str(e)
 
-# Column names for filtering and analysis
-column_initiatives = 'Existence of initiatives and projects in the past five years to improve the tourism sector - exists'
-column_tourism_index = 'Tourism Index'
-column_ref_area = 'refArea'
+def find_col(df, candidates):
+    """Return first column in df whose name contains any of the candidate substrings (case-insensitive)."""
+    if df is None:
+        return None
+    cols = df.columns.tolist()
+    for cand in candidates:
+        cand_l = cand.lower()
+        for original in cols:
+            if cand_l in original.lower():
+                return original
+    return None
 
-# Load data (either from URL or file upload)
+# Sidebar for data loading and controls
+st.sidebar.markdown("## 📁 Data Source")
+use_url = st.sidebar.checkbox("Load dataset from URL", value=True)
+
 df = None
 err = None
-use_url = st.sidebar.checkbox("Load dataset from URL", value=True)
 
 if use_url:
     st.sidebar.caption("📡 Loading from online source...")
@@ -94,7 +113,7 @@ if df is None:
     st.warning("⚠️ No data loaded yet. Please enable URL loading or upload a CSV file using the sidebar.")
     st.stop()
 
-# Data preview
+# Data info
 st.sidebar.markdown("## 📊 Dataset Information")
 st.sidebar.metric("Total Rows", f"{df.shape[0]:,}")
 st.sidebar.metric("Total Columns", f"{df.shape[1]}")
@@ -103,15 +122,146 @@ st.sidebar.metric("Total Columns", f"{df.shape[1]}")
 with st.expander("🔍 Preview Dataset (First 5 Rows)"):
     st.dataframe(df.head(), use_container_width=True)
 
-# Regional and Initiative filtering
-df_initiatives = df[df[column_initiatives] == 1]
+with st.expander("📋 Column Names"):
+    cols_df = pd.DataFrame({"Column Names": df.columns.tolist()})
+    st.dataframe(cols_df, use_container_width=True)
+
+# Column detection
+col_initiative = find_col(df, [
+    "Existence of initiatives", "Existence of initiativ", "existence of initiativ", 
+    "initiatives and projects", "initiatives"
+])
+
+col_tourism_index = find_col(df, ["Tourism Index", "Tourism_Index", "tourism index"])
+col_total_hotels = find_col(df, ["Total number of hotels", "Total number of hotel", "total hotels", "total number"])
+col_governorate = find_col(df, ["Governorate", "governorate", "Region", "region", "Mohafazat", "mohafazat"])
+
+# Look for additional geographic columns
+col_area = find_col(df, ["Area", "City", "Municipality", "District", "Caza", "area", "city"])
+col_zone = find_col(df, ["Zone", "zone", "Sector", "sector"])
+
+# Numeric columns for analysis
+numeric_cols = df.select_dtypes(include=["number"]).columns.tolist()
+preferred_metrics = []
+if col_tourism_index and col_tourism_index in numeric_cols:
+    preferred_metrics.append(col_tourism_index)
+if col_total_hotels and col_total_hotels in numeric_cols:
+    preferred_metrics.append(col_total_hotels)
+for c in numeric_cols:
+    if c not in preferred_metrics:
+        preferred_metrics.append(c)
+
+# Initialize session state for regional filtering
+if 'governorate_choice' not in st.session_state:
+    if col_governorate:
+        st.session_state.governorate_choice = sorted(df[col_governorate].dropna().unique().tolist())
+    else:
+        st.session_state.governorate_choice = []
+
+if 'area_choice' not in st.session_state:
+    if col_area:
+        st.session_state.area_choice = sorted(df[col_area].dropna().unique().tolist())
+    else:
+        st.session_state.area_choice = []
+
+# ENHANCED REGIONAL FILTERING SECTION
+st.sidebar.markdown("## 🗺️ Enhanced Geographic Filters")
+
+# Primary governorate filter with enhanced controls
+governorate_choice = None
+if col_governorate:
+    st.sidebar.markdown("### 🏛️ Primary Region Filter")
+    
+    uniq_gov = sorted(df[col_governorate].dropna().unique().tolist())
+    
+    # Quick selection buttons
+    col_all, col_none, col_reset = st.sidebar.columns(3)
+    with col_all:
+        if st.button("✅ All", key="select_all_gov", help="Select all regions"):
+            st.session_state.governorate_choice = uniq_gov
+            st.rerun()
+    with col_none:
+        if st.button("❌ None", key="deselect_all_gov", help="Deselect all regions"):
+            st.session_state.governorate_choice = []
+            st.rerun()
+    with col_reset:
+        if st.button("🔄 Reset", key="reset_gov", help="Reset to default"):
+            st.session_state.governorate_choice = uniq_gov
+            st.rerun()
+    
+    # Main governorate selector
+    governorate_choice = st.sidebar.multiselect(
+        f"🏛️ Select {col_governorate}s",
+        options=uniq_gov,
+        default=st.session_state.governorate_choice,
+        help="Filter analysis by specific governorates/regions",
+        key="gov_multiselect"
+    )
+    
+    # Update session state
+    st.session_state.governorate_choice = governorate_choice
+    
+    # Show selection summary
+    if len(governorate_choice) != len(uniq_gov):
+        coverage_pct = (len(governorate_choice) / len(uniq_gov)) * 100
+        st.sidebar.info(f"📊 Selected: {len(governorate_choice)}/{len(uniq_gov)} regions ({coverage_pct:.1f}%)")
+
+# Secondary area filter (if available)
+area_choice = None
+if col_area:
+    st.sidebar.markdown("### 🏘️ Sub-Area Filter")
+    
+    # Filter areas based on selected governorates
+    if governorate_choice and len(governorate_choice) > 0:
+        available_areas = df[df[col_governorate].isin(governorate_choice)][col_area].dropna().unique()
+    else:
+        available_areas = df[col_area].dropna().unique()
+    
+    available_areas = sorted(available_areas.tolist())
+    
+    if available_areas:
+        # Quick selection for areas
+        col_all_area, col_none_area = st.sidebar.columns(2)
+        with col_all_area:
+            if st.button("✅ All Areas", key="select_all_areas", help="Select all sub-areas"):
+                st.session_state.area_choice = available_areas
+                st.rerun()
+        with col_none_area:
+            if st.button("❌ No Areas", key="deselect_all_areas", help="Deselect all sub-areas"):
+                st.session_state.area_choice = []
+                st.rerun()
+        
+        # Filter session state areas to only include available ones
+        valid_area_choice = [area for area in st.session_state.area_choice if area in available_areas]
+        if not valid_area_choice and available_areas:
+            valid_area_choice = available_areas
+        
+        area_choice = st.sidebar.multiselect(
+            f"🏘️ Select {col_area}s",
+            options=available_areas,
+            default=valid_area_choice,
+            help="Further filter by specific areas within selected regions"
+        )
+        
+        st.session_state.area_choice = area_choice
+        
+        # Show area selection summary
+        if len(area_choice) != len(available_areas):
+            area_coverage = (len(area_choice) / len(available_areas)) * 100 if available_areas else 0
+            st.sidebar.info(f"🏘️ Areas: {len(area_choice)}/{len(available_areas)} ({area_coverage:.1f}%)")
+
+# **Regional Analysis Visualization**
+st.markdown('<div class="sub-header">📊 Regional Analysis by Initiative Status</div>', unsafe_allow_html=True)
+
+# Filter for initiatives
+df_initiatives = df[df[col_initiative] == 1]
 
 # Count initiatives by region
-initiative_counts_by_region = df_initiatives[column_ref_area].value_counts().reset_index()
+initiative_counts_by_region = df_initiatives[col_governorate].value_counts().reset_index()
 initiative_counts_by_region.columns = ['Region', 'Number of Initiatives']
 
 # Calculate average tourism index by region
-tourism_index_by_region = df_initiatives.groupby(column_ref_area)[column_tourism_index].mean().reset_index()
+tourism_index_by_region = df_initiatives.groupby(col_governorate)[col_tourism_index].mean().reset_index()
 tourism_index_by_region.columns = ['Region', 'Average Tourism Index']
 
 # Merge the two dataframes
@@ -148,31 +298,3 @@ if st.button("📥 Export Filtered Data"):
         file_name="filtered_tourism_data.csv",
         mime="text/csv"
     )
-
-# Add region-based analysis to the original dashboard
-st.markdown('<div class="sub-header">🗺️ Geographic Insights: Initiatives by Region</div>', unsafe_allow_html=True)
-
-# Add region-based analysis
-region_analysis = df.groupby(column_ref_area)[column_initiatives].sum().reset_index()
-region_analysis.columns = ['Region', 'Initiatives Count']
-
-fig_region = px.bar(
-    region_analysis,
-    x='Region',
-    y='Initiatives Count',
-    title='Total Initiatives by Region',
-    labels={'Region': 'Region', 'Initiatives Count': 'Number of Initiatives'},
-    color='Initiatives Count',
-    color_continuous_scale='Viridis',
-    hover_data=['Initiatives Count']
-)
-
-fig_region.update_layout(
-    xaxis={'tickangle': 45},  # Rotate region names
-    showlegend=False
-)
-
-# Show the region-based initiatives chart
-st.plotly_chart(fig_region)
-
-# Additional insights can be added below as required
