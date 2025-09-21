@@ -473,6 +473,8 @@ if col_area:
         if len(area_choice) != len(available_areas):
             area_coverage = (len(area_choice) / len(available_areas)) * 100 if available_areas else 0
             st.sidebar.info(f"🏘️ Areas: {len(area_choice)}/{len(available_areas)} ({area_coverage:.1f}%)")
+    else:
+        area_choice = None
 
 # Geographic Analysis Mode
 st.sidebar.markdown("### 🔍 Geographic Analysis Mode")
