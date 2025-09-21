@@ -1,4 +1,21 @@
-import streamlit as st
+# Look for additional geographic columns
+col_area = col_town if col_town else find_col(df, ["Area", "City", "Municipality", "District", "Caza", "area", "city"])
+col_zone = find_col(df, ["Zone", "zone", "Sector", "sector"])
+
+# Convert initiative column values for better readability
+if col_initiative and col_initiative in df.columns:
+    def clean_initiative_value(val):
+        if pd.isna(val) or val == 0:
+            return "No Initiatives"
+        elif val == 1:
+            return "Has Initiatives" 
+        else:
+            return str(val)
+    
+    df['Initiative_Clean'] = df[col_initiative].apply(clean_initiative_value)
+    # Use the cleaned column for analysis
+    original_col_initiative = col_initiative
+    col_initiative = 'Initiative_Clean'import streamlit as st
 import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
@@ -128,23 +145,68 @@ st.sidebar.metric("Total Columns", f"{df.shape[1]}")
 with st.expander("🔍 Preview Dataset (First 5 Rows)"):
     st.dataframe(df.head(), use_container_width=True)
 
-with st.expander("📋 Column Names"):
-    cols_df = pd.DataFrame({"Column Names": df.columns.tolist()})
-    st.dataframe(cols_df, use_container_width=True)
+# Show detected columns (debug info)
+with st.expander("🔧 Column Detection Debug Info"):
+    col_debug1, col_debug2 = st.columns(2)
+    with col_debug1:
+        st.write("**Detected Columns:**")
+        st.write(f"- Initiative: {col_initiative}")
+        st.write(f"- Tourism Index: {col_tourism_index}")  
+        st.write(f"- Total Hotels: {col_total_hotels}")
+        st.write(f"- Governorate: {col_governorate}")
+        st.write(f"- Town/Area: {col_area}")
+        
+    with col_debug2:
+        st.write("**Sample Data:**")
+        if col_governorate and col_initiative:
+            sample_data = df[[col_governorate, col_initiative, metric]].head()
+            st.dataframe(sample_data)
+        
+        if col_governorate:
+            st.write("**Available Governorates:**")
+            st.write(list(df[col_governorate].unique()[:10]))
 
-# Column detection
+# Column detection - FIXED based on actual data
 col_initiative = find_col(df, [
-    "Existence of initiatives", "Existence of initiativ", "existence of initiativ", 
-    "initiatives and projects", "initiatives"
+    "Existence of initiatives and projects in the past five years to improve the tourism sector"
 ])
 
-col_tourism_index = find_col(df, ["Tourism Index", "Tourism_Index", "tourism index"])
-col_total_hotels = find_col(df, ["Total number of hotels", "Total number of hotel", "total hotels", "total number"])
-col_governorate = find_col(df, ["Governorate", "governorate", "Region", "region", "Mohafazat", "mohafazat"])
+col_tourism_index = find_col(df, ["Tourism Index"])
+col_total_hotels = find_col(df, ["Total number of hotels"])
+col_governorate = find_col(df, ["refArea"])  # This contains the governorate URLs
+col_town = find_col(df, ["Town"])  # This is the town/area name
 
-# Look for additional geographic columns
-col_area = find_col(df, ["Area", "City", "Municipality", "District", "Caza", "area", "city"])
-col_zone = find_col(df, ["Zone", "zone", "Sector", "sector"])
+# Convert refArea URLs to readable governorate names
+if col_governorate and col_governorate in df.columns:
+    def extract_governorate_name(url):
+        if pd.isna(url):
+            return "Unknown"
+        # Extract governorate name from URL
+        if "Mount_Lebanon_Governorate" in str(url):
+            return "Mount Lebanon"
+        elif "North_Governorate" in str(url):
+            return "North"
+        elif "South_Governorate" in str(url):
+            return "South"  
+        elif "Beqaa_Governorate" in str(url):
+            return "Beqaa"
+        elif "Nabatieh_Governorate" in str(url):
+            return "Nabatieh"
+        elif "Akkar_Governorate" in str(url):
+            return "Akkar"
+        elif "Baalbek-Hermel_Governorate" in str(url):
+            return "Baalbek-Hermel"
+        else:
+            # Try to extract district names for more granular analysis
+            url_str = str(url)
+            if "_District" in url_str:
+                district = url_str.split("/")[-1].replace("_District", "").replace("_", " ")
+                return district
+            return "Other"
+    
+    # Create a clean governorate column
+    df['Governorate_Clean'] = df[col_governorate].apply(extract_governorate_name)
+    col_governorate = 'Governorate_Clean'
 
 # Numeric columns for analysis
 numeric_cols = df.select_dtypes(include=["number"]).columns.tolist()
@@ -517,6 +579,9 @@ It reveals which regions have better initiative implementation and how this corr
 """, unsafe_allow_html=True)
 
 if col_governorate and col_initiative and not df_filtered.empty:
+    # Debug info - show what columns were detected
+    st.info(f"✅ Detected columns: Governorate: '{col_governorate}', Initiatives: '{col_initiative}', Town: '{col_area}'")
+    
     # Create cross-tabulation analysis
     cross_tab_data = df_filtered.groupby([col_governorate, col_initiative])[metric].agg(['mean', 'count']).reset_index()
     cross_tab_data.columns = [col_governorate, col_initiative, 'Average', 'Count']
