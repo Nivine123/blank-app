@@ -180,7 +180,210 @@ if col_governorate:
     
     uniq_gov = sorted(df[col_governorate].dropna().unique().tolist())
     
-    # Quick selection buttons
+    # Ensure numeric
+    try:
+        df_box[dist_col] = pd.to_numeric(df_box[dist_col], errors='coerce')
+        df_box = df_box.dropna(subset=[dist_col])
+    except:
+        pass
+    
+    if not df_box.empty:
+        # Create enhanced box plot
+        fig3 = px.box(
+            df_box, 
+            x=col_initiative, 
+            y=dist_col,
+            title=f"Distribution of {dist_col} by {col_initiative}",
+            labels={col_initiative: col_initiative, dist_col: dist_col},
+            color=col_initiative,
+            points="outliers"  # Show outliers
+        )
+        
+        # Add mean markers
+        mean_values = df_box.groupby(col_initiative)[dist_col].mean().reset_index()
+        fig3.add_scatter(
+            x=mean_values[col_initiative],
+            y=mean_values[dist_col],
+            mode='markers',
+            marker=dict(color='red', size=10, symbol='diamond'),
+            name='Mean',
+            showlegend=True
+        )
+        
+        fig3.update_layout(height=500, showlegend=True)
+        st.plotly_chart(fig3, use_container_width=True)
+        
+        # Distribution insights
+        stats = df_box.groupby(col_initiative)[dist_col].agg(['mean', 'median', 'std', 'min', 'max']).round(2)
+        
+        st.markdown("### 📊 Statistical Summary")
+        st.dataframe(stats, use_container_width=True)
+        
+    else:
+        st.warning("⚠️ No valid numeric data available for the selected distribution column and filters.")
+
+# Additional Analysis Section
+st.markdown('<div class="sub-header">🔍 Additional Interactive Analysis</div>', 
+            unsafe_allow_html=True)
+
+analysis_type = st.selectbox(
+    "Choose additional analysis:",
+    ["Summary Statistics", "Correlation Analysis", "Top Performers", "Geographic Insights"]
+)
+
+if analysis_type == "Summary Statistics":
+    st.markdown("### 📊 Comprehensive Statistics")
+    numeric_summary = df_filtered[numeric_cols].describe()
+    st.dataframe(numeric_summary, use_container_width=True)
+
+elif analysis_type == "Correlation Analysis" and len(numeric_cols) > 1:
+    st.markdown("### 🔗 Correlation Matrix")
+    corr_matrix = df_filtered[numeric_cols].corr()
+    fig_corr = px.imshow(
+        corr_matrix,
+        aspect='auto',
+        color_continuous_scale='RdBu',
+        title='Correlation Matrix of Numeric Variables'
+    )
+    st.plotly_chart(fig_corr, use_container_width=True)
+
+elif analysis_type == "Top Performers":
+    st.markdown("### 🏆 Top Performers")
+    if col_governorate and metric and len(df_filtered) > 0:
+        top_regions = df_filtered.groupby(col_governorate)[metric].mean().nlargest(5)
+        col_a, col_b = st.columns(2)
+        with col_a:
+            st.bar_chart(top_regions)
+        with col_b:
+            st.write("**Top 5 Regions:**")
+            for region, value in top_regions.items():
+                st.write(f"• {region}: {value:.2f}")
+
+elif analysis_type == "Geographic Insights":
+    st.markdown("### 🗺️ Geographic Performance Insights")
+    
+    if col_governorate and len(df_filtered) > 0:
+        geo_insights = df_filtered.groupby(col_governorate)[metric].agg(['mean', 'count', 'std']).round(2)
+        geo_insights.columns = ['Average', 'Data Points', 'Variability']
+        geo_insights = geo_insights.sort_values('Average', ascending=False)
+        
+        # Calculate regional statistics
+        top_region = geo_insights.index[0]
+        top_value = geo_insights.iloc[0]['Average']
+        bottom_region = geo_insights.index[-1]
+        bottom_value = geo_insights.iloc[-1]['Average']
+        
+        col_insight1, col_insight2 = st.columns(2)
+        
+        with col_insight1:
+            st.markdown(f"""
+            <div class="geographic-box">
+            <strong>🏆 Best Performer:</strong> {top_region}<br>
+            <strong>Score:</strong> {top_value:.2f}<br>
+            <strong>🔻 Needs Improvement:</strong> {bottom_region}<br>
+            <strong>Score:</strong> {bottom_value:.2f}
+            </div>
+            """, unsafe_allow_html=True)
+        
+        with col_insight2:
+            performance_gap = top_value - bottom_value
+            avg_variability = geo_insights['Variability'].mean()
+            st.markdown(f"""
+            <div class="geographic-box">
+            <strong>📊 Performance Gap:</strong> {performance_gap:.2f}<br>
+            <strong>📈 Avg Variability:</strong> {avg_variability:.2f}<br>
+            <strong>🗺️ Regions Analyzed:</strong> {len(geo_insights)}
+            </div>
+            """, unsafe_allow_html=True)
+        
+        st.dataframe(geo_insights, use_container_width=True)
+
+# Interactive Features Summary
+st.markdown("---")
+st.markdown("""
+### 🚀 Interactive Features Summary
+
+**🎛️ Feature 1: Chart Type Selection**
+- **Location**: Sidebar → Regional Visualization Controls → "Chart Type for Regional Analysis"
+- **Impact**: Changes the visualization type in Visualization 2 (Bar Chart, Horizontal Bar Chart, Pie Chart)
+- **Real-time Effect**: Instantly updates how regional initiatives data is displayed
+
+**📈 Feature 2: Tourism Index Integration**  
+- **Location**: Sidebar → Regional Visualization Controls → "Include Tourism Index in Regional Analysis"
+- **Impact**: Adds tourism index as color coding or hover information in Visualization 2
+- **Dynamic Changes**: When enabled, bars are colored by tourism index values, providing dual-metric insights
+
+### 💡 How to Use for Insights:
+
+1. **Chart Type Exploration**: 
+   - Use **Bar Chart** for easy comparison of initiative counts
+   - Switch to **Horizontal Bar Chart** for better readability with long region names
+   - Try **Pie Chart** to see regional proportion of total initiatives
+
+2. **Tourism Index Integration**: 
+   - Enable the checkbox to see which regions have both high initiatives AND high tourism performance
+   - Look for regions with many initiatives but low tourism index (potential improvement areas)
+   - Identify regions with few initiatives but high tourism index (natural tourism potential)
+
+### 🎯 For Your Video (1 minute):
+- **0-15s**: Show Chart Type switching (Bar → Horizontal → Pie Chart)
+- **15-30s**: Demonstrate Tourism Index checkbox effect (color changes, dual insights)
+- **30-45s**: Highlight key regional insights (most active region, tourism correlation)
+- **45-60s**: Explain design decisions (simple interaction, clear business value)
+
+### 📊 Key Insights Generated:
+- **Regional Initiative Activity**: Which regions are most active in tourism development
+- **Performance vs Activity**: Correlation between initiative count and tourism performance  
+- **Investment Opportunities**: Regions with high potential but low current activity
+- **Success Stories**: Regions with both high initiatives and strong tourism performance
+""")
+
+# Footer with usage instructions
+st.markdown("---")
+st.markdown("""
+### 🚀 How to Use This Enhanced Dashboard:
+
+1. **Enhanced Geographic Filtering**: 
+   - Use quick selection buttons (All/None/Reset) for efficient region management
+   - Multi-level filtering: Governorate → Area for detailed geographic analysis
+   - Choose geographic analysis modes for different perspectives
+
+2. **Interactive Features**:
+   - **Feature 1**: Chart type selection for different visualization perspectives
+   - **Feature 2**: Tourism index integration for dual-metric analysis
+
+3. **Data Analysis**: 
+   - Switch between different tourism metrics and aggregation methods
+   - Examine data distribution and identify outliers using enhanced visualizations
+
+### 💡 Key Design Decisions:
+
+- **Simple but Powerful**: Two focused interactive features that provide clear business value
+- **Regional Focus**: Direct implementation of your Colab analysis with enhancements
+- **Dual-Metric Insights**: Ability to see both initiative activity and tourism performance
+- **Multiple Perspectives**: Different chart types reveal different patterns in the same data
+- **Clear Visual Feedback**: Interactive changes are immediately visible
+""")
+
+# Export functionality
+if st.button("📥 Export Filtered Data"):
+    csv = df_filtered.to_csv(index=False)
+    
+    # Create filename with filter info
+    filter_info = []
+    if governorate_choice and len(governorate_choice) < len(df[col_governorate].unique()):
+        filter_info.append(f"{len(governorate_choice)}regions")
+    if area_choice and col_area and len(area_choice) < len(df[col_area].unique()):
+        filter_info.append(f"{len(area_choice)}areas")
+    
+    filter_suffix = "_" + "_".join(filter_info) if filter_info else ""
+    
+    st.download_button(
+        label="Download Filtered Data as CSV",
+        data=csv,
+        file_name=f"filtered_tourism_data{filter_suffix}_{pd.Timestamp.now().strftime('%Y%m%d_%H%M%S')}.csv",
+        mime="text/csv"
+    ) Quick selection buttons
     col_all, col_none, col_reset = st.sidebar.columns(3)
     with col_all:
         if st.button("✅ All", key="select_all_gov", help="Select all regions"):
@@ -212,21 +415,19 @@ if col_governorate:
         coverage_pct = (len(governorate_choice) / len(uniq_gov)) * 100
         st.sidebar.info(f"📊 Selected: {len(governorate_choice)}/{len(uniq_gov)} regions ({coverage_pct:.1f}%)")
 
-# NEW: Regional Analysis Interactive Controls
-st.sidebar.markdown("## 🗺️ Regional Analysis Controls")
-
-# Interactive Feature 1: Visualization Type Selector
-viz_type = st.sidebar.selectbox(
-    "🎯 Regional Visualization Type:",
-    ["Bar Chart Comparison", "Scatter Plot Analysis", "Pie Chart Distribution", "Box Plot by Region"],
-    help="Choose different ways to visualize regional data"
+# Interactive Feature 1: Chart Type Selection for Regional Analysis
+st.sidebar.markdown("## 🎯 Regional Visualization Controls")
+chart_type = st.sidebar.selectbox(
+    "📊 Chart Type for Regional Analysis:",
+    ["Bar Chart", "Horizontal Bar Chart", "Pie Chart"],
+    help="Choose how to display the regional initiatives data"
 )
 
-# Interactive Feature 2: Metric Comparison Mode
-comparison_mode = st.sidebar.selectbox(
-    "📊 Regional Comparison Mode:",
-    ["Single Metric Analysis", "Two Metric Comparison", "Multi-Metric Overview"],
-    help="Select how many metrics to compare across regions"
+# Interactive Feature 2: Show/Hide Tourism Index
+show_tourism_index = st.sidebar.checkbox(
+    "📈 Include Tourism Index in Regional Analysis",
+    value=True,
+    help="Add tourism index as color coding or secondary metric"
 )
 
 # Secondary area filter (if available)
@@ -305,8 +506,8 @@ else:
 
 # Metric and aggregation selection
 if preferred_metrics:
-    metric = st.sidebar.selectbox("📈 Select Primary Metric", preferred_metrics, 
-                                help="Choose the main numeric variable for analysis")
+    metric = st.sidebar.selectbox("📈 Select Metric to Analyze", preferred_metrics, 
+                                help="Choose the numeric variable for analysis")
     agg_func = st.sidebar.selectbox("🔢 Aggregation Method", 
                                   ["mean", "median", "sum", "count"], 
                                   index=0,
@@ -365,7 +566,99 @@ with col5:
         init_count = len(selected_initiatives)
         st.metric("🏗️ Initiatives", init_count)
 
-# Visualization 1: Aggregated Analysis (ORIGINAL)
+# ENHANCED GEOGRAPHIC ANALYSIS SECTION
+if col_governorate and governorate_choice and geo_analysis_mode != "Standard Analysis":
+    st.markdown('<div class="sub-header">🗺️ Geographic Analysis Results</div>', unsafe_allow_html=True)
+    
+    if geo_analysis_mode == "Compare Regions" and len(governorate_choice) > 1:
+        st.markdown("""
+        <div class="geographic-box">
+        <strong>🔍 Regional Comparison Mode:</strong> Comparing performance across selected regions
+        </div>
+        """, unsafe_allow_html=True)
+        
+        # Regional comparison analysis
+        regional_stats = df_filtered.groupby(col_governorate)[metric].agg(['mean', 'count', 'std']).round(2)
+        regional_stats.columns = ['Average', 'Count', 'Std Dev']
+        
+        # Create horizontal bar chart for better region name visibility
+        fig_regional = px.bar(
+            regional_stats.reset_index(), 
+            x='Average', 
+            y=col_governorate,
+            orientation='h',
+            title=f"Regional Comparison: Average {metric}",
+            color='Average',
+            color_continuous_scale="viridis",
+            text='Average'
+        )
+        fig_regional.update_traces(texttemplate='%{text:.1f}', textposition='outside')
+        fig_regional.update_layout(height=max(400, len(governorate_choice) * 60))
+        st.plotly_chart(fig_regional, use_container_width=True)
+        
+        # Show detailed comparison table
+        st.markdown("#### 📊 Detailed Regional Statistics")
+        st.dataframe(regional_stats, use_container_width=True)
+    
+    elif geo_analysis_mode == "Regional Ranking":
+        st.markdown("""
+        <div class="geographic-box">
+        <strong>🏆 Regional Ranking Mode:</strong> Performance ranking of selected regions
+        </div>
+        """, unsafe_allow_html=True)
+        
+        if len(governorate_choice) > 1:
+            ranking_df = df_filtered.groupby(col_governorate).agg({
+                metric: ['mean', 'sum', 'count']
+            }).round(2)
+            
+            ranking_df.columns = ['Average', 'Total', 'Count']
+            ranking_df = ranking_df.sort_values('Average', ascending=False).reset_index()
+            ranking_df['Rank'] = range(1, len(ranking_df) + 1)
+            
+            # Add performance indicators
+            ranking_df['Performance'] = pd.cut(ranking_df['Average'], 
+                                             bins=3, 
+                                             labels=['🔴 Below Average', '🟡 Average', '🟢 Above Average'])
+            
+            # Reorder columns
+            ranking_df = ranking_df[['Rank', col_governorate, 'Average', 'Total', 'Count', 'Performance']]
+            
+            st.dataframe(ranking_df, use_container_width=True, hide_index=True)
+        else:
+            st.info("🔍 Select multiple regions to see ranking comparison")
+    
+    elif geo_analysis_mode == "Geographic Distribution":
+        st.markdown("""
+        <div class="geographic-box">
+        <strong>📍 Geographic Distribution Mode:</strong> Visualizing data distribution across geography
+        </div>
+        """, unsafe_allow_html=True)
+        
+        if col_area and area_choice:
+            # Two-level geographic analysis
+            geo_df = df_filtered.groupby([col_governorate, col_area])[metric].mean().reset_index()
+            
+            if not geo_df.empty:
+                fig_geo = px.sunburst(
+                    geo_df,
+                    path=[col_governorate, col_area],
+                    values=metric,
+                    title=f"Hierarchical Geographic Distribution of {metric}"
+                )
+                st.plotly_chart(fig_geo, use_container_width=True)
+        else:
+            # Single-level geographic pie chart
+            geo_totals = df_filtered.groupby(col_governorate)[metric].sum()
+            
+            fig_pie = px.pie(
+                values=geo_totals.values,
+                names=geo_totals.index,
+                title=f"Geographic Distribution of Total {metric}"
+            )
+            st.plotly_chart(fig_pie, use_container_width=True)
+
+# Visualization 1: Aggregated Analysis
 st.markdown('<div class="sub-header">📊 Visualization 1: Regional Analysis by Initiative Status</div>', 
             unsafe_allow_html=True)
 
@@ -430,171 +723,156 @@ if col_initiative and not df_filtered.empty:
 else:
     st.error("❌ Cannot create visualization - no valid categorical column or empty dataset.")
 
-# NEW: Visualization 2: Interactive Regional Analysis
-st.markdown('<div class="sub-header">🗺️ Visualization 2: Interactive Regional Performance Analysis</div>', 
+# NEW: Visualization 2: Regional Initiatives Analysis
+st.markdown('<div class="sub-header">🗺️ Visualization 2: Tourism Initiatives by Region</div>', 
             unsafe_allow_html=True)
 
 st.markdown("""
 <div class="context-box">
-<strong>🎯 Purpose:</strong> This interactive regional analysis provides insights into tourism performance 
-across different geographic regions using multiple visualization types and comparison modes.
-The two interactive features allow you to switch between different chart types and comparison methods.
+<strong>🎯 Purpose:</strong> This visualization shows the number of tourism initiatives across different regions.
+It helps identify which regions have the most active tourism development programs.
+The interactive features allow you to change chart types and include tourism index information.
 </div>
 """, unsafe_allow_html=True)
 
-if col_governorate and governorate_choice and len(df_filtered) > 0:
+if col_governorate and col_initiative and len(df_filtered) > 0:
+    # Filter the data to include only rows where initiatives exist (value = 1)
+    initiatives_exist_df = df_filtered[df_filtered[col_initiative] == 1]
     
-    # Prepare regional data based on comparison mode
-    if comparison_mode == "Single Metric Analysis":
-        # Simple regional aggregation
-        regional_data = df_filtered.groupby(col_governorate)[metric].agg(['mean', 'count']).reset_index()
-        regional_data.columns = ['Region', 'Average_Value', 'Data_Points']
+    if len(initiatives_exist_df) > 0:
+        # Count the number of initiatives per region
+        initiative_counts_by_region = initiatives_exist_df[col_governorate].value_counts().reset_index()
+        initiative_counts_by_region.columns = [col_governorate, 'Number of Initiatives']
         
-    elif comparison_mode == "Two Metric Comparison" and len(preferred_metrics) >= 2:
-        # Two metric comparison
-        metric_2 = st.selectbox("📈 Select Second Metric for Comparison:", 
-                               [m for m in preferred_metrics if m != metric], 
-                               key="second_metric")
-        
-        regional_data = df_filtered.groupby(col_governorate).agg({
-            metric: 'mean',
-            metric_2: 'mean'
-        }).reset_index()
-        regional_data.columns = ['Region', 'Metric_1', 'Metric_2']
-        
-    else:  # Multi-Metric Overview
-        # Use top 3 metrics
-        top_metrics = preferred_metrics[:3]
-        agg_dict = {m: 'mean' for m in top_metrics}
-        regional_data = df_filtered.groupby(col_governorate).agg(agg_dict).reset_index()
-        
-    # Create visualization based on selected type
-    if viz_type == "Bar Chart Comparison":
-        if comparison_mode == "Single Metric Analysis":
-            fig2 = px.bar(
-                regional_data.sort_values('Average_Value', ascending=False),
-                x='Region',
-                y='Average_Value',
-                title=f'Regional Comparison: {metric} by {col_governorate}',
-                color='Average_Value',
-                color_continuous_scale='viridis',
-                text='Average_Value'
-            )
-            fig2.update_traces(texttemplate='%{text:.1f}', textposition='outside')
+        # Add tourism index if selected
+        if show_tourism_index and col_tourism_index in df_filtered.columns:
+            # Calculate average tourism index by region for initiatives
+            tourism_index_by_region = initiatives_exist_df.groupby(col_governorate)[col_tourism_index].mean().reset_index()
+            tourism_index_by_region.columns = [col_governorate, 'Average Tourism Index']
             
-        elif comparison_mode == "Two Metric Comparison" and len(preferred_metrics) >= 2:
-            fig2 = px.bar(
-                regional_data,
-                x='Region',
-                y=['Metric_1', 'Metric_2'],
-                title=f'Regional Comparison: {metric} vs {metric_2}',
-                barmode='group'
-            )
+            # Merge the dataframes
+            regional_data = pd.merge(initiative_counts_by_region, tourism_index_by_region, on=col_governorate, how='left')
+        else:
+            regional_data = initiative_counts_by_region
         
-        else:  # Multi-metric
-            fig2 = px.bar(
-                regional_data,
-                x='Region',
-                y=top_metrics,
-                title=f'Multi-Metric Regional Comparison',
-                barmode='group'
-            )
-    
-    elif viz_type == "Scatter Plot Analysis" and comparison_mode == "Two Metric Comparison" and len(preferred_metrics) >= 2:
-        fig2 = px.scatter(
-            regional_data,
-            x='Metric_1',
-            y='Metric_2',
-            hover_data=['Region'],
-            title=f'Regional Scatter: {metric} vs {metric_2}',
-            color='Region',
-            size_max=15
-        )
-        
-        # Add region labels
-        for i, row in regional_data.iterrows():
-            fig2.add_annotation(
-                x=row['Metric_1'], y=row['Metric_2'],
-                text=row['Region'], 
-                showarrow=False,
-                font=dict(size=10)
-            )
-    
-    elif viz_type == "Pie Chart Distribution":
-        if comparison_mode == "Single Metric Analysis":
+        # Create visualization based on selected chart type
+        if chart_type == "Bar Chart":
+            if show_tourism_index and col_tourism_index in df_filtered.columns:
+                fig2 = px.bar(
+                    regional_data.sort_values('Number of Initiatives', ascending=False),
+                    x=col_governorate,
+                    y='Number of Initiatives',
+                    title='Number of Tourism Initiatives by Region',
+                    color='Average Tourism Index',
+                    color_continuous_scale='viridis',
+                    hover_data=['Average Tourism Index'] if 'Average Tourism Index' in regional_data.columns else None,
+                    text='Number of Initiatives'
+                )
+            else:
+                fig2 = px.bar(
+                    regional_data.sort_values('Number of Initiatives', ascending=False),
+                    x=col_governorate,
+                    y='Number of Initiatives',
+                    title='Number of Tourism Initiatives by Region',
+                    color='Number of Initiatives',
+                    color_continuous_scale='blues',
+                    text='Number of Initiatives'
+                )
+            
+            fig2.update_traces(texttemplate='%{text}', textposition='outside')
+            fig2.update_layout(xaxis_tickangle=45)
+            
+        elif chart_type == "Horizontal Bar Chart":
+            if show_tourism_index and col_tourism_index in df_filtered.columns:
+                fig2 = px.bar(
+                    regional_data.sort_values('Number of Initiatives', ascending=True),
+                    x='Number of Initiatives',
+                    y=col_governorate,
+                    orientation='h',
+                    title='Number of Tourism Initiatives by Region',
+                    color='Average Tourism Index',
+                    color_continuous_scale='viridis',
+                    hover_data=['Average Tourism Index'] if 'Average Tourism Index' in regional_data.columns else None,
+                    text='Number of Initiatives'
+                )
+            else:
+                fig2 = px.bar(
+                    regional_data.sort_values('Number of Initiatives', ascending=True),
+                    x='Number of Initiatives',
+                    y=col_governorate,
+                    orientation='h',
+                    title='Number of Tourism Initiatives by Region',
+                    color='Number of Initiatives',
+                    color_continuous_scale='blues',
+                    text='Number of Initiatives'
+                )
+            
+            fig2.update_traces(texttemplate='%{text}', textposition='outside')
+            
+        else:  # Pie Chart
             fig2 = px.pie(
                 regional_data,
-                values='Average_Value',
-                names='Region',
-                title=f'Regional Distribution of {metric}'
+                values='Number of Initiatives',
+                names=col_governorate,
+                title='Distribution of Tourism Initiatives by Region'
             )
-    
-    elif viz_type == "Box Plot by Region":
-        fig2 = px.box(
-            df_filtered,
-            x=col_governorate,
-            y=metric,
-            title=f'Distribution of {metric} by Region',
-            color=col_governorate
-        )
-        fig2.update_layout(xaxis_tickangle=45)
-    
-    # Default fallback - simple bar chart
-    if 'fig2' not in locals():
-        regional_summary = df_filtered.groupby(col_governorate)[metric].mean().reset_index()
-        fig2 = px.bar(
-            regional_summary.sort_values(metric, ascending=False),
-            x=col_governorate,
-            y=metric,
-            title=f'Regional Average: {metric}',
-            color=metric,
-            color_continuous_scale='plasma'
-        )
-    
-    # Display the chart
-    fig2.update_layout(height=500, xaxis_tickangle=45)
-    st.plotly_chart(fig2, use_container_width=True)
-    
-    # Regional insights
-    if comparison_mode == "Single Metric Analysis":
-        best_region = regional_data.loc[regional_data['Average_Value'].idxmax(), 'Region']
-        best_value = regional_data['Average_Value'].max()
-        worst_region = regional_data.loc[regional_data['Average_Value'].idxmin(), 'Region']
-        worst_value = regional_data['Average_Value'].min()
+        
+        fig2.update_layout(height=500)
+        st.plotly_chart(fig2, use_container_width=True)
+        
+        # Regional initiatives insights
+        total_initiatives = regional_data['Number of Initiatives'].sum()
+        top_region = regional_data.loc[regional_data['Number of Initiatives'].idxmax(), col_governorate]
+        top_count = regional_data['Number of Initiatives'].max()
         
         col_i1, col_i2, col_i3 = st.columns(3)
+        
         with col_i1:
             st.markdown(f"""
             <div class="geographic-box">
-            <strong>🏆 Best Performer:</strong><br>
-            {best_region}<br>
-            <strong>Score:</strong> {best_value:.2f}
+            <strong>🏆 Most Active Region:</strong><br>
+            {top_region}<br>
+            <strong>Initiatives:</strong> {top_count}
             </div>
             """, unsafe_allow_html=True)
         
         with col_i2:
             st.markdown(f"""
             <div class="insight-box">
-            <strong>📊 Performance Gap:</strong><br>
-            {best_value - worst_value:.2f}<br>
-            <strong>Regions:</strong> {len(regional_data)}
+            <strong>📊 Total Initiatives:</strong><br>
+            {total_initiatives}<br>
+            <strong>Regions with Initiatives:</strong> {len(regional_data)}
             </div>
             """, unsafe_allow_html=True)
         
         with col_i3:
-            st.markdown(f"""
-            <div class="context-box">
-            <strong>🎯 Needs Focus:</strong><br>
-            {worst_region}<br>
-            <strong>Score:</strong> {worst_value:.2f}
-            </div>
-            """, unsafe_allow_html=True)
+            avg_initiatives = total_initiatives / len(regional_data)
+            if show_tourism_index and 'Average Tourism Index' in regional_data.columns:
+                avg_tourism_idx = regional_data['Average Tourism Index'].mean()
+                st.markdown(f"""
+                <div class="context-box">
+                <strong>📈 Averages:</strong><br>
+                Initiatives/Region: {avg_initiatives:.1f}<br>
+                <strong>Tourism Index:</strong> {avg_tourism_idx:.2f}
+                </div>
+                """, unsafe_allow_html=True)
+            else:
+                st.markdown(f"""
+                <div class="context-box">
+                <strong>📈 Average:</strong><br>
+                {avg_initiatives:.1f} initiatives per region
+                </div>
+                """, unsafe_allow_html=True)
+        
+        # Show detailed table
+        st.markdown("#### 📋 Regional Initiatives Summary")
+        st.dataframe(regional_data.sort_values('Number of Initiatives', ascending=False), use_container_width=True, hide_index=True)
+        
+    else:
+        st.warning("⚠️ No regions found with existing initiatives in the filtered data.")
 
 else:
-    st.info("🔍 Select regions in the sidebar to see regional analysis.")
-
-# Rest of your original code (Distribution Analysis, Additional Analysis, etc.)
-# [Keep all your existing sections from the original code here]
+    st.info("🔍 No regional or initiative data available for visualization.")
 
 # Distribution Analysis
 st.markdown('<div class="sub-header">📈 Visualization 3: Distribution Analysis</div>', 
@@ -625,91 +903,4 @@ if col_initiative and dist_col:
     df_box = df_filtered[[col_initiative, dist_col]].copy()
     df_box = df_box.dropna()
     
-    # Ensure numeric
-    try:
-        df_box[dist_col] = pd.to_numeric(df_box[dist_col], errors='coerce')
-        df_box = df_box.dropna(subset=[dist_col])
-    except:
-        pass
-    
-    if not df_box.empty:
-        # Create enhanced box plot
-        fig3 = px.box(
-            df_box, 
-            x=col_initiative, 
-            y=dist_col,
-            title=f"Distribution of {dist_col} by {col_initiative}",
-            labels={col_initiative: col_initiative, dist_col: dist_col},
-            color=col_initiative,
-            points="outliers"  # Show outliers
-        )
-        
-        # Add mean markers
-        mean_values = df_box.groupby(col_initiative)[dist_col].mean().reset_index()
-        fig3.add_scatter(
-            x=mean_values[col_initiative],
-            y=mean_values[dist_col],
-            mode='markers',
-            marker=dict(color='red', size=10, symbol='diamond'),
-            name='Mean',
-            showlegend=True
-        )
-        
-        fig3.update_layout(height=500, showlegend=True)
-        st.plotly_chart(fig3, use_container_width=True)
-        
-        # Distribution insights
-        stats = df_box.groupby(col_initiative)[dist_col].agg(['mean', 'median', 'std', 'min', 'max']).round(2)
-        
-        st.markdown("### 📊 Statistical Summary")
-        st.dataframe(stats, use_container_width=True)
-        
-    else:
-        st.warning("⚠️ No valid numeric data available for the selected distribution column and filters.")
-
-# Interactive Features Summary
-st.markdown("---")
-st.markdown("""
-### 🚀 Interactive Features Summary
-
-**🎛️ Feature 1: Visualization Type Selector**
-- **Location**: Sidebar → Regional Analysis Controls → "Regional Visualization Type"
-- **Impact**: Changes the chart type in Visualization 2 (Bar Chart, Scatter Plot, Pie Chart, Box Plot)
-- **Real-time Effect**: Instantly updates the regional visualization with different chart styles
-
-**📊 Feature 2: Comparison Mode Selector**  
-- **Location**: Sidebar → Regional Analysis Controls → "Regional Comparison Mode"
-- **Impact**: Changes data structure and analysis depth (Single Metric, Two Metric, Multi-Metric)
-- **Dynamic Changes**: Updates data aggregation, chart content, and available visualization options
-
-### 💡 How to Use for Insights:
-
-1. **Chart Type Exploration**: Switch between Bar Chart and Box Plot to see regional performance vs distribution
-2. **Comparison Depth**: Use "Two Metric Comparison" with Scatter Plot to find regional correlations  
-3. **Distribution Analysis**: Box Plot shows which regions have consistent vs variable performance
-4. **Regional Patterns**: Pie Chart reveals regional contribution proportions
-
-### 🎯 For Your Video (1 minute):
-- **0-15s**: Show Visualization Type switching (Bar → Scatter → Box Plot)
-- **15-30s**: Demonstrate Comparison Mode changes (Single → Two Metric)  
-- **30-45s**: Highlight regional insights generated
-- **45-60s**: Explain design decisions (interactive flexibility, multiple perspectives)
-""")
-
-# Export functionality
-if st.button("📥 Export Filtered Data"):
-    csv = df_filtered.to_csv(index=False)
-    
-    # Create filename with filter info
-    filter_info = []
-    if governorate_choice and len(governorate_choice) < len(df[col_governorate].unique()):
-        filter_info.append(f"{len(governorate_choice)}regions")
-    if area_choice and col_area and len(area_choice) < len(df[col_area].unique()):
-        filter_info.append(f"{len(area_choice)}areas")
-    
-    filter_suffix = "_" + "_".join(filter_info) if filter_info else ""
-    
-    st.download_button(
-        label="Download Filtered Data as CSV",
-        data=csv,
-        file_name=f"
+    #
