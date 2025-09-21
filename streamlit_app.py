@@ -579,12 +579,25 @@ It reveals which regions have better initiative implementation and how this corr
 """, unsafe_allow_html=True)
 
 if col_governorate and col_initiative and not df_filtered.empty:
-    # Debug info - show what columns were detected
-    st.info(f"✅ Detected columns: Governorate: '{col_governorate}', Initiatives: '{col_initiative}', Town: '{col_area}'")
+    # Debug info - show what columns were detected and sample values
+    st.info(f"✅ **Analysis Ready!** Governorate: '{col_governorate}' | Initiative: '{col_initiative}' | Records: {len(df_filtered)}")
+    
+    # Show sample of the processed data
+    with st.expander("🔧 View Processed Data Sample"):
+        sample_cols = [col_governorate, col_initiative, metric]
+        if col_area:
+            sample_cols.append(col_area)
+        st.dataframe(df_filtered[sample_cols].head(10))
     
     # Create cross-tabulation analysis
-    cross_tab_data = df_filtered.groupby([col_governorate, col_initiative])[metric].agg(['mean', 'count']).reset_index()
-    cross_tab_data.columns = [col_governorate, col_initiative, 'Average', 'Count']
+    try:
+        cross_tab_data = df_filtered.groupby([col_governorate, col_initiative])[metric].agg(['mean', 'count']).reset_index()
+        cross_tab_data.columns = [col_governorate, col_initiative, 'Average', 'Count']
+        
+        if cross_tab_data.empty:
+            st.warning("⚠️ No data available after grouping. Check your filters.")
+        else:
+            st.success(f"📊 Cross-tabulation created: {len(cross_tab_data)} region-initiative combinations found")
     
     # Choose visualization type for regions vs initiatives
     viz_type = st.selectbox(
