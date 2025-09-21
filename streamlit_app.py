@@ -156,145 +156,64 @@ if 'area_choice' not in st.session_state:
     else:
         st.session_state.area_choice = []
 
-# ENHANCED REGIONAL FILTERING SECTION
-st.sidebar.markdown("## 🗺️ Enhanced Geographic Filters")
-
-# Primary governorate filter with enhanced controls
-governorate_choice = None
-if col_governorate:
-    st.sidebar.markdown("### 🏛️ Primary Region Filter")
-    
-    uniq_gov = sorted(df[col_governorate].dropna().unique().tolist())
-    
-    # Quick selection buttons
-    col_all, col_none, col_reset = st.sidebar.columns(3)
-    with col_all:
-        if st.button("✅ All", key="select_all_gov", help="Select all regions"):
-            st.session_state.governorate_choice = uniq_gov
-            st.rerun()
-    with col_none:
-        if st.button("❌ None", key="deselect_all_gov", help="Deselect all regions"):
-            st.session_state.governorate_choice = []
-            st.rerun()
-    with col_reset:
-        if st.button("🔄 Reset", key="reset_gov", help="Reset to default"):
-            st.session_state.governorate_choice = uniq_gov
-            st.rerun()
-    
-    # Main governorate selector
-    governorate_choice = st.sidebar.multiselect(
-        f"🏛️ Select {col_governorate}s",
-        options=uniq_gov,
-        default=st.session_state.governorate_choice,
-        help="Filter analysis by specific governorates/regions",
-        key="gov_multiselect"
-    )
-    
-    # Update session state
-    st.session_state.governorate_choice = governorate_choice
-    
-    # Show selection summary
-    if len(governorate_choice) != len(uniq_gov):
-        coverage_pct = (len(governorate_choice) / len(uniq_gov)) * 100
-        st.sidebar.info(f"📊 Selected: {len(governorate_choice)}/{len(uniq_gov)} regions ({coverage_pct:.1f}%)")
-
-# Secondary area filter (if available)
-area_choice = None
-if col_area:
-    st.sidebar.markdown("### 🏘️ Sub-Area Filter")
-    
-    # Filter areas based on selected governorates
-    if governorate_choice and len(governorate_choice) > 0:
-        available_areas = df[df[col_governorate].isin(governorate_choice)][col_area].dropna().unique()
-    else:
-        available_areas = df[col_area].dropna().unique()
-    
-    available_areas = sorted(available_areas.tolist())
-    
-    if available_areas:
-        # Quick selection for areas
-        col_all_area, col_none_area = st.sidebar.columns(2)
-        with col_all_area:
-            if st.button("✅ All Areas", key="select_all_areas", help="Select all sub-areas"):
-                st.session_state.area_choice = available_areas
-                st.rerun()
-        with col_none_area:
-            if st.button("❌ No Areas", key="deselect_all_areas", help="Deselect all sub-areas"):
-                st.session_state.area_choice = []
-                st.rerun()
-        
-        # Filter session state areas to only include available ones
-        valid_area_choice = [area for area in st.session_state.area_choice if area in available_areas]
-        if not valid_area_choice and available_areas:
-            valid_area_choice = available_areas
-        
-        area_choice = st.sidebar.multiselect(
-            f"🏘️ Select {col_area}s",
-            options=available_areas,
-            default=valid_area_choice,
-            help="Further filter by specific areas within selected regions"
-        )
-        
-        st.session_state.area_choice = area_choice
-        
-        # Show area selection summary
-        if len(area_choice) != len(available_areas):
-            area_coverage = (len(area_choice) / len(available_areas)) * 100 if available_areas else 0
-            st.sidebar.info(f"🏘️ Areas: {len(area_choice)}/{len(available_areas)} ({area_coverage:.1f}%)")
-
 # Apply filters
 df_filtered = df.copy()
 
 # Apply governorate filter
-if governorate_choice is not None and len(governorate_choice) > 0:
+if col_governorate:
+    governorate_choice = st.sidebar.multiselect(
+        "Select Governorate",
+        options=df[col_governorate].dropna().unique(),
+        default=st.session_state.governorate_choice
+    )
     df_filtered = df_filtered[df_filtered[col_governorate].isin(governorate_choice)]
 
 # Apply area filter
-if area_choice is not None and len(area_choice) > 0 and col_area:
+if col_area:
+    area_choice = st.sidebar.multiselect(
+        "Select Area",
+        options=df[col_area].dropna().unique(),
+        default=st.session_state.area_choice
+    )
     df_filtered = df_filtered[df_filtered[col_area].isin(area_choice)]
 
 # Apply initiative filter
 df_initiatives = df_filtered[df_filtered[col_initiative] == 1]  # Filter based on initiatives
 
-# Count initiatives by region
-initiative_counts_by_region = df_initiatives[col_governorate].value_counts().reset_index()
-initiative_counts_by_region.columns = ['Region', 'Number of Initiatives']
+# Ensure col_governorate exists in the dataframe after filtering
+if col_governorate in df_initiatives.columns:
+    # Count initiatives by region
+    initiative_counts_by_region = df_initiatives[col_governorate].value_counts().reset_index()
+    initiative_counts_by_region.columns = ['Region', 'Number of Initiatives']
 
-# Calculate average tourism index by region
-tourism_index_by_region = df_initiatives.groupby(col_governorate)[col_tourism_index].mean().reset_index()
-tourism_index_by_region.columns = ['Region', 'Average Tourism Index']
+    # Calculate average tourism index by region
+    tourism_index_by_region = df_initiatives.groupby(col_governorate)[col_tourism_index].mean().reset_index()
+    tourism_index_by_region.columns = ['Region', 'Average Tourism Index']
 
-# Merge the two dataframes
-merged_df = pd.merge(initiative_counts_by_region, tourism_index_by_region, on='Region')
+    # Merge the two dataframes
+    merged_df = pd.merge(initiative_counts_by_region, tourism_index_by_region, on='Region')
 
-# Bar chart: Number of initiatives and average tourism index by region
-fig = px.bar(
-    merged_df,
-    x='Region',
-    y='Number of Initiatives',
-    title='Number of Tourism Initiatives and Average Tourism Index by Region',
-    labels={'Region': 'Region', 'Number of Initiatives': 'Number of Initiatives'},
-    color='Average Tourism Index',
-    color_continuous_scale='Viridis',
-    hover_data=['Average Tourism Index']
-)
-
-# Update layout for better readability
-fig.update_layout(
-    barmode='group',
-    xaxis={'tickangle': 45},  # Rotate region names
-    showlegend=False
-)
-
-# Show the plot
-st.plotly_chart(fig)
-
-# Export functionality
-if st.button("📥 Export Filtered Data"):
-    csv = df_initiatives.to_csv(index=False)
-    st.download_button(
-        label="Download Filtered Data as CSV",
-        data=csv,
-        file_name="filtered_tourism_data.csv",
-        mime="text/csv"
+    # Bar chart: Number of initiatives and average tourism index by region
+    fig = px.bar(
+        merged_df,
+        x='Region',
+        y='Number of Initiatives',
+        title='Number of Tourism Initiatives and Average Tourism Index by Region',
+        labels={'Region': 'Region', 'Number of Initiatives': 'Number of Initiatives'},
+        color='Average Tourism Index',
+        color_continuous_scale='Viridis',
+        hover_data=['Average Tourism Index']
     )
+
+    # Update layout for better readability
+    fig.update_layout(
+        barmode='group',
+        xaxis={'tickangle': 45},  # Rotate region names
+        showlegend=False
+    )
+
+    # Show the plot
+    st.plotly_chart(fig)
+
+else:
+    st.error(f"Column {col_governorate} not found in the data.")
