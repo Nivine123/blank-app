@@ -157,156 +157,40 @@ for c in numeric_cols:
     if c not in preferred_metrics:
         preferred_metrics.append(c)
 
-# Initialize session state for regional filtering
-if 'governorate_choice' not in st.session_state:
-    if col_governorate:
-        st.session_state.governorate_choice = sorted(df[col_governorate].dropna().unique().tolist())
-    else:
-        st.session_state.governorate_choice = []
+# Sidebar filters
+st.sidebar.markdown("## 🎛️ Filtering Options")
+selected_governorate = st.sidebar.selectbox("Select Governorate", df[col_governorate].unique())
+selected_area = st.sidebar.selectbox("Select Area", df[col_area].unique())
 
-if 'area_choice' not in st.session_state:
-    if col_area:
-        st.session_state.area_choice = sorted(df[col_area].dropna().unique().tolist())
-    else:
-        st.session_state.area_choice = []
+df_filtered = df[(df[col_governorate] == selected_governorate) & (df[col_area] == selected_area)]
 
-# Apply filters
-df_filtered = df.copy()
+# Visualization 1: Boxplot of Tourism Index Distribution
+st.markdown('<div class="sub-header">📈 Visualization 1: Tourism Index Distribution</div>', unsafe_allow_html=True)
 
-# Apply governorate filter
-if st.session_state.governorate_choice:
-    df_filtered = df_filtered[df_filtered[col_governorate].isin(st.session_state.governorate_choice)]
-
-# Apply area filter
-if st.session_state.area_choice:
-    df_filtered = df_filtered[df_filtered[col_area].isin(st.session_state.area_choice)]
-
-# Visualization 1: Aggregated Analysis by Initiative Status
-st.markdown('<div class="sub-header">📊 Visualization 1: Regional Analysis by Initiative Status</div>', 
-            unsafe_allow_html=True)
-
-st.markdown("""
-<div class="context-box">
-<strong>🎯 Purpose:</strong> This visualization shows how the selected metric varies across different initiative statuses.
-It helps identify which regions or initiative types perform better in terms of the chosen tourism metric.
-</div>
-""", unsafe_allow_html=True)
-
-if col_initiative and not df_filtered.empty:
-    # Compute aggregation
-    agg_df = df_filtered.groupby(col_initiative)[col_tourism_index].mean().reset_index()
-    agg_df = agg_df.sort_values(by=col_tourism_index, ascending=False)
-    
-    # Create enhanced bar chart
-    fig1 = px.bar(
-        agg_df, 
-        x=col_initiative, 
-        y=col_tourism_index,
-        title=f"Mean {col_tourism_index} by {col_initiative}",
-        labels={col_initiative: col_initiative, col_tourism_index: f"Mean {col_tourism_index}"},
-        color=col_tourism_index,
-        color_continuous_scale="viridis",
-        text=col_tourism_index
-    )
-    
-    # Customize the chart
-    fig1.update_traces(texttemplate='%{text:.1f}', textposition='outside')
-    fig1.update_layout(
-        height=500,
-        xaxis={'categoryorder': 'total descending'},
-        showlegend=False
-    )
-    
-    st.plotly_chart(fig1, use_container_width=True)
-
+if col_tourism_index:
+    fig = px.box(df_filtered, y=col_tourism_index, title="Distribution of Tourism Index by Region")
+    st.plotly_chart(fig, use_container_width=True)
 else:
-    st.error("❌ Cannot create visualization - no valid categorical column or empty dataset.")
+    st.error("❌ No valid Tourism Index column found.")
 
-# Visualization 2: Tourism Initiatives by Region
-st.markdown('<div class="sub-header">🗺️ Visualization 2: Tourism Initiatives by Region</div>', 
-            unsafe_allow_html=True)
+# Visualization 2: Number of Initiatives by Region
+st.markdown('<div class="sub-header">📊 Visualization 2: Number of Initiatives by Region</div>', unsafe_allow_html=True)
 
-st.markdown("""
-<div class="context-box">
-<strong>🎯 Purpose:</strong> This visualization shows the number of tourism initiatives across different regions,
-directly based on your Colab analysis. The interactive features allow you to explore the data from multiple perspectives
-and understand the relationship between initiative activity and tourism performance.
-</div>
-""", unsafe_allow_html=True)
-
-# Use refArea column for regional analysis (from your second code)
 if 'refArea' in df.columns and col_initiative:
-    
-    # Filter the data to include only rows where initiatives exist (based on your Colab code)
+    # Filter data based on initiative existence
     initiatives_exist_df = df_filtered[df_filtered[col_initiative] == 1]
     
-    if len(initiatives_exist_df) > 0:
-        # Count the number of initiatives per region (your Colab logic)
-        initiative_counts_by_region = initiatives_exist_df['refArea'].value_counts().reset_index()
-        initiative_counts_by_region.columns = ['refArea', 'Number of Initiatives']
-        
-        # Add tourism index if available and selected
-        regional_data = initiative_counts_by_region.copy()
-        
-        if col_tourism_index in df.columns:
-            # Calculate average tourism index by region for initiatives
-            tourism_index_by_region = initiatives_exist_df.groupby('refArea')[col_tourism_index].mean().reset_index()
-            tourism_index_by_region.columns = ['refArea', 'Average Tourism Index']
-            
-            # Merge the dataframes
-            regional_data = pd.merge(initiative_counts_by_region, tourism_index_by_region, on='refArea')
-        
-        # Create visualization based on interactive controls
-        fig2 = px.bar(
-            regional_data.sort_values('Number of Initiatives', ascending=False),
-            x='refArea',
-            y='Number of Initiatives',
-            title='Number of Tourism Initiatives by Region',
-            color='Average Tourism Index' if 'Average Tourism Index' in regional_data else 'Number of Initiatives',
-            color_continuous_scale='Viridis' if 'Average Tourism Index' in regional_data else 'Blues',
-            text='Number of Initiatives'
-        )
-        
-        fig2.update_traces(texttemplate='%{text}', textposition='outside')
-        fig2.update_layout(xaxis_tickangle=45)
-        
-        st.plotly_chart(fig2, use_container_width=True)
-        
-        # Generate insights based on the visualization
-        total_initiatives = regional_data['Number of Initiatives'].sum()
-        most_active_region = regional_data.loc[regional_data['Number of Initiatives'].idxmax(), 'refArea']
-        max_initiatives = regional_data['Number of Initiatives'].max()
-        avg_initiatives = regional_data['Number of Initiatives'].mean()
-        
-        # Display insights
-        col_i1, col_i2, col_i3 = st.columns(3)
-        
-        with col_i1:
-            st.markdown(f"""
-            <div class="geographic-box">
-            <strong>🏆 Most Active Region:</strong><br>
-            {most_active_region}<br>
-            <strong>Initiatives:</strong> {max_initiatives}
-            </div>
-            """, unsafe_allow_html=True)
-        
-        with col_i2:
-            st.markdown(f"""
-            <div class="insight-box">
-            <strong>📊 Total Overview:</strong><br>
-            Total Initiatives: {total_initiatives}<br>
-            <strong>Active Regions:</strong> {len(regional_data)}
-            </div>
-            """, unsafe_allow_html=True)
-        
-        with col_i3:
-            st.markdown(f"""
-            <div class="context-box">
-            <strong>📈 Initiative Distribution:</strong><br>
-            Avg per Region: {avg_initiatives:.1f}<br>
-            <strong>Range:</strong> {regional_data['Number of Initiatives'].min()}-{regional_data['Number of Initiatives'].max()}
-            </div>
-            """, unsafe_allow_html=True)
+    # Count number of initiatives per region
+    initiative_counts_by_region = initiatives_exist_df['refArea'].value_counts().reset_index()
+    initiative_counts_by_region.columns = ['refArea', 'Number of Initiatives']
+    
+    # Create bar chart visualization
+    fig2 = px.bar(initiative_counts_by_region, x='refArea', y='Number of Initiatives', 
+                  title="Number of Initiatives by Region", text='Number of Initiatives')
+    fig2.update_traces(texttemplate='%{text}', textposition='outside')
+    st.plotly_chart(fig2, use_container_width=True)
+else:
+    st.error("❌ No valid columns found for initiative analysis.")
 
 # Footer with insights and instructions
 st.markdown("---")
