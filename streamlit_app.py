@@ -307,34 +307,6 @@ if 'refArea' in df.columns and col_initiative:
             <strong>Range:</strong> {regional_data['Number of Initiatives'].min()}-{regional_data['Number of Initiatives'].max()}
             </div>
             """, unsafe_allow_html=True)
-        
-        # Additional insights based on data patterns
-        if 'Average Tourism Index' in regional_data.columns:
-            # Correlation analysis
-            correlation = regional_data['Number of Initiatives'].corr(regional_data['Average Tourism Index'])
-            
-            st.markdown("#### 🔍 Performance vs Activity Analysis")
-            
-            if correlation > 0.5:
-                correlation_insight = "Strong positive correlation - regions with more initiatives tend to have higher tourism performance"
-                correlation_color = "geographic-box"
-            elif correlation > 0.3:
-                correlation_insight = "Moderate positive correlation - some relationship between initiatives and tourism performance"
-                correlation_color = "context-box"
-            elif correlation < -0.3:
-                correlation_insight = "Negative correlation - regions with more initiatives may have lower current tourism performance (potential development areas)"
-                correlation_color = "insight-box"
-            else:
-                correlation_insight = "Low correlation - initiative activity and tourism performance appear independent"
-                correlation_color = "context-box"
-            
-            st.markdown(f"""
-            <div class="{correlation_color}">
-            <strong>📈 Initiative-Performance Relationship:</strong><br>
-            Correlation coefficient: {correlation:.3f}<br>
-            <strong>Interpretation:</strong> {correlation_insight}
-            </div>
-            """, unsafe_allow_html=True)
 
 # Footer with insights and instructions
 st.markdown("---")
