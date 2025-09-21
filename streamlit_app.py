@@ -688,7 +688,7 @@ if 'refArea' in df.columns and col_initiative:
                 correlation_insight = "Low correlation - initiative activity and tourism performance appear independent"
                 correlation_color = "context-box"
             
-                       st.markdown(f"""
+            st.markdown(f"""
             <div class="{correlation_color}">
             <strong>📈 Initiative-Performance Relationship:</strong><br>
             Correlation coefficient: {correlation:.3f}<br>
@@ -704,31 +704,4 @@ st.markdown("""
 1. **Enhanced Geographic Filtering**: 
    - Use quick selection buttons (All/None/Reset) for efficient region management
    - Multi-level filtering: Governorate → Area for detailed geographic analysis
-   - Choose geographic analysis modes for different perspectives
-
-2. **Interactive Features**:
-   - **Feature 1**: Multi-level geographic filtering with coverage indicators
-   - **Feature 2**: Geographic analysis modes (Compare, Ranking, Distribution)
-
-3. **Data Analysis**: 
-   - Switch between different tourism metrics and aggregation methods
-   - Examine data distribution and identify outliers using enhanced visualizations
-
-### 💡 Key Design Decisions:
-
-- **Smart Geographic Hierarchy**: Automatically detects and links governorate and area columns
-- **Interactive Filter Management**: Session state preserves selections and provides quick controls
-- **Multiple Analysis Perspectives**: Standard analysis plus specialized geographic modes
-- **Enhanced Visual Feedback**: Coverage percentages and filter summaries
-- **Comprehensive Insights**: Combines statistical analysis with geographic intelligence
-""")
-
-# Export functionality
-if st.button("📥 Export Filtered Data"):
-    csv = df_filtered.to_csv(index=False)
-    st.download_button(
-        label="Download Filtered Data as CSV",
-        data=csv,
-        file_name="filtered_tourism_data.csv",
-        mime="text/csv"
-    )
+   - Choose geographic analysis modes for different perspe
